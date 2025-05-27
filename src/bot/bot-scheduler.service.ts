@@ -19,7 +19,7 @@ export class PoemSchedulerService {
     this.bot = new Telegraf(this.config.get<string>('TELEGRAM_BOT_TOKEN')!);
   }
 
-  @Interval(2 * 60 * 1000) // Every 2 minutes
+  @Interval(.15 * 60 * 1000) // Every 2 minutes
   async sendNextPoem() {
     const groupId = this.config.get<string>('TELEGRAM_GROUP_ID');
     if (!groupId) return;
@@ -37,7 +37,22 @@ export class PoemSchedulerService {
     try {
       poems.map((poem) => {
         (async () => {
-          await this.bot.telegram.sendMessage(groupId, poem?.text);
+          await this.bot.telegram.sendMessage(groupId, poem?.text, {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: '✅ تایید', callback_data: `approve_${poem._id}` },
+
+                ],
+                [
+                  { text: '✏ ویرایش', callback_data: `edit_${poem._id}` },
+                ],
+                [
+                  { text: '🗑 حذف', callback_data: `delete_${poem._id}` },
+                ],
+              ],
+            },
+          });
 
           // Mark as sent
           poem.sent = true;

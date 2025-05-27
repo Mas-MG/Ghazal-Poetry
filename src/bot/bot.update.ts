@@ -18,21 +18,38 @@ export class BotUpdate {
 
   @Start()
   async startCommand(@Ctx() ctx: Context) {
+    if (!ctx.from) return;
+    const userId = ctx.from.id;
+    waitingForPoem.set(userId, false);
     await ctx.reply(
-      'خوش اومدی، برای ارسال شعر روی دکمه زیر کلیک کن!',
+      'خوش اومدی. میخوای چیکار کنی؟',
       Markup.inlineKeyboard([
-        Markup.button.callback('📝ارسال شعر', 'SEND_POEM'),
+        Markup.button.callback('ارسال شعر', 'SEND_POEM'),
+        Markup.button.callback('راهنما', 'HELP'),
       ]),
     );
   }
 
   @Action('SEND_POEM')
   async sendPoem(@Ctx() ctx: Context) {
+    const chatType=ctx.chat?.type
+    if(chatType!=='private'){
+     await ctx.reply('ارسال شعر در گروه مجاز نمی باشد.')
+     return 
+    }
     if (!ctx.from) return;
     const userId = ctx.from.id;
     waitingForPoem.set(userId, true);
     await ctx.answerCbQuery();
     await ctx.reply('هرچه دل تنگت میخواهد بگو...');
+  }
+
+  @Action('HELP')
+  async showInstructor(@Ctx() ctx: Context) {
+    await ctx.answerCbQuery();
+    await ctx.reply(
+      '1. ارسال شعر در گروه مجاز نمی باشد.\n2. ویرایش و حذف شعر توسط ادمین "طاها" امکان پذیر است.\n3. پس از ارسال شعر تا تایید آن توسط ادمین منتظر بمانید.\n 4. در صورت عدم تایید شعر، شعر حذف خواهد شد.',
+    );
   }
 
   @On('text')
@@ -42,14 +59,6 @@ export class BotUpdate {
     if (!message || !('text' in message) || message.chat.type !== 'private') {
       return;
     }
-
-    const groupId = this.config.get<string>('TELEGRAM_GROUP_ID');
-    if (!groupId) {
-      throw new Error('TELEGRAM_GROUP_ID is not set in environment variables');
-    }
-
-    // const chatId = message.chat.id;
-    // const messageId = message.message_id;
 
     const { id: userId, username, first_name, last_name } = message.from;
     const { text } = message;
@@ -63,7 +72,6 @@ export class BotUpdate {
       sent: false,
     });
 
-    // await ctx.telegram.copyMessage(groupId, chatId, messageId);
     await ctx.reply('شعر زیبای شما ارسال شد قشنگم ^^');
   }
 }
