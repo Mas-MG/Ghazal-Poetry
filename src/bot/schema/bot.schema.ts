@@ -20,7 +20,13 @@ export class Poem extends Document {
   text: string;
 
   @Prop({ default: false })
-  sent: boolean;
+  isPublished: boolean;
+
+  @Prop()
+  category: string;
+
+  @Prop()
+  poet: string;
 }
 
 export const PoemSchema = SchemaFactory.createForClass(Poem);

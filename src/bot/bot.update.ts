@@ -6,7 +6,14 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Poem } from './schema/bot.schema';
 import { Model } from 'mongoose';
 
-const waitingForPoem = new Map<number, boolean>();
+const sendPoemState = new Map<
+  number,
+  {
+    step: 'waiting_poem' | 'waiting_poet' | 'waiting_category';
+    poem?: string;
+    poet?: string;
+  }
+>();
 
 @Update()
 @Injectable()
@@ -18,9 +25,6 @@ export class BotUpdate {
 
   @Start()
   async startCommand(@Ctx() ctx: Context) {
-    if (!ctx.from) return;
-    const userId = ctx.from.id;
-    waitingForPoem.set(userId, false);
     await ctx.reply(
       'خوش اومدی. میخوای چیکار کنی؟',
       Markup.inlineKeyboard([
@@ -32,14 +36,14 @@ export class BotUpdate {
 
   @Action('SEND_POEM')
   async sendPoem(@Ctx() ctx: Context) {
-    const chatType=ctx.chat?.type
-    if(chatType!=='private'){
-     await ctx.reply('ارسال شعر در گروه مجاز نمی باشد.')
-     return 
+    const chatType = ctx.chat?.type;
+    if (chatType !== 'private') {
+      await ctx.reply('ارسال شعر در گروه مجاز نمی باشد.');
+      return;
     }
     if (!ctx.from) return;
     const userId = ctx.from.id;
-    waitingForPoem.set(userId, true);
+    sendPoemState.set(userId, { step: 'waiting_poem' });
     await ctx.answerCbQuery();
     await ctx.reply('هرچه دل تنگت میخواهد بگو...');
   }
@@ -62,16 +66,58 @@ export class BotUpdate {
 
     const { id: userId, username, first_name, last_name } = message.from;
     const { text } = message;
+    const state = sendPoemState.get(userId);
+    if (!state) {
+      await ctx.reply('ابتدا روی دکمه ارسال شعر کلیک کن!');
+      return;
+    }
 
-    await this.poemModel.create({
-      userId,
-      username,
-      firstName: first_name,
-      lastName: last_name,
-      text,
-      sent: false,
-    });
+    if (state.step === 'waiting_poem') {
+      sendPoemState.set(userId, { step: 'waiting_poet', poem: text });
+      await ctx.reply('شاعرش کیه؟');
+      return;
+    } else if (state.step === 'waiting_poet') {
+      sendPoemState.set(userId, {
+        ...state,
+        step: 'waiting_category',
+        poet: text,
+      });
+      await ctx.reply('موضوعش چیه؟');
+      return;
+    } else if (state.step === 'waiting_category') {
+      const dataPlaceHolder = sendPoemState.get(userId);
+      if (!dataPlaceHolder?.poem || !dataPlaceHolder?.poet) {
+        await ctx.reply('لطفا شعر و شاعر را وارد کنید.');
+        return;
+      }
+      const { poem, poet } = dataPlaceHolder;
 
-    await ctx.reply('شعر زیبای شما ارسال شد قشنگم ^^');
+      const newPoem = await this.poemModel.create({
+        userId,
+        username,
+        firstName: first_name,
+        lastName: last_name,
+        category: text,
+        isPublished: false,
+        text: poem,
+        poet,
+      });
+      sendPoemState.delete(userId);
+      const groupId = this.config.get('TELEGRAM_GROUP_ID');
+      await ctx.telegram.sendMessage(
+        groupId,
+        `شعر جدید:\n\n${newPoem.text}\nشاعر: ${newPoem.poet}\n دسته بندی: ${newPoem.category}`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '✅ تایید', callback_data: `approve_${newPoem._id}` }],
+              [{ text: '🗑 حذف', callback_data: `delete_${newPoem._id}` }],
+              [{ text: '✏ ویرایش', callback_data: `edit_${newPoem._id}` }],
+            ],
+          },
+        },
+      );
+      await ctx.reply('شعر زیبای شما ارسال شد قشنگم ^^');
+    }
   }
 }
