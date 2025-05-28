@@ -2,10 +2,11 @@
 import { Schema, Prop, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
+export type PoemDocument = Poem & Document;
 @Schema({ timestamps: true })
 export class Poem extends Document {
   @Prop({ required: true })
-  userId: number;
+  userId: number; // The same as chatId
 
   @Prop()
   username?: string;
@@ -27,6 +28,9 @@ export class Poem extends Document {
 
   @Prop()
   poet: string;
+
+  @Prop()
+  approved:boolean
 }
 
 export const PoemSchema = SchemaFactory.createForClass(Poem);

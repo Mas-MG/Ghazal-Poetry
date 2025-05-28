@@ -4,7 +4,7 @@ import { Context, Markup } from 'telegraf';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Poem } from './schema/bot.schema';
-import { Model } from 'mongoose';
+import { HydratedDocument, Model } from 'mongoose';
 
 const sendPoemState = new Map<
   number,
@@ -56,6 +56,34 @@ export class BotUpdate {
     );
   }
 
+  @Action(/approve_(.+)/)
+  async approvePoem(@Ctx() ctx: Context & { match: RegExpMatchArray }) {
+    const poemId = ctx.match[1]; //Mongo db id
+    const chatId = ctx.chat?.id;
+    if (!chatId || !poemId) {
+      await ctx.answerCbQuery('خطا: بافت نشد!', { show_alert: true });
+      return;
+    }
+    const admins = await ctx.telegram.getChatAdministrators(chatId);
+    const isAdmin = admins.some((admin) => admin.user.id === ctx.from?.id);
+    if (!isAdmin) {
+      await ctx.answerCbQuery('فقط ادمین اجازه تایید دارد!', {
+        show_alert: true,
+      });
+      return;
+    }
+    const poem = await this.poemModel.findById(poemId);
+    if (!poem) {
+      await ctx.answerCbQuery('خطا: شعر پیدا نشد!', { show_alert: true });
+      return;
+    }
+    await this.poemModel.findByIdAndUpdate(poemId, { approved: true });
+
+    await ctx.answerCbQuery('✅ شعر تایید شد');
+    await ctx.editMessageReplyMarkup(undefined);
+    await ctx.telegram.sendMessage(poem.userId, 'شعر خوشگلت تایید شد :)');
+  }
+
   @On('text')
   async onText(@Ctx() ctx: Context) {
     const message = ctx.message;
@@ -92,32 +120,34 @@ export class BotUpdate {
       }
       const { poem, poet } = dataPlaceHolder;
 
-      const newPoem = await this.poemModel.create({
+      const newPoem: HydratedDocument<Poem> = await this.poemModel.create({
         userId,
         username,
         firstName: first_name,
         lastName: last_name,
         category: text,
-        isPublished: false,
         text: poem,
         poet,
+        isPublished: false,
+        approved: false,
       });
       sendPoemState.delete(userId);
       const groupId = this.config.get('TELEGRAM_GROUP_ID');
+      const poemId = newPoem._id?.toString();
       await ctx.telegram.sendMessage(
         groupId,
         `شعر جدید:\n\n${newPoem.text}\nشاعر: ${newPoem.poet}\n دسته بندی: ${newPoem.category}`,
         {
           reply_markup: {
             inline_keyboard: [
-              [{ text: '✅ تایید', callback_data: `approve_${newPoem._id}` }],
-              [{ text: '🗑 حذف', callback_data: `delete_${newPoem._id}` }],
-              [{ text: '✏ ویرایش', callback_data: `edit_${newPoem._id}` }],
+              [{ text: '✅ تایید', callback_data: `approve_${poemId}` }],
+              [{ text: '✏ ویرایش', callback_data: `edit_${poemId}` }],
+              [{ text: '🗑 حذف', callback_data: `delete_${poemId}` }],
             ],
           },
         },
       );
-      await ctx.reply('شعر زیبای شما ارسال شد قشنگم ^^');
+      await ctx.reply('شعر زیبای شما ارسال شد ^^');
     }
   }
 }
