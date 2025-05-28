@@ -12,6 +12,7 @@ const sendPoemState = new Map<
     step: 'waiting_poem' | 'waiting_poet' | 'waiting_category';
     poem?: string;
     poet?: string;
+    poemId?: string;
   }
 >();
 
@@ -84,6 +85,37 @@ export class BotUpdate {
     await ctx.telegram.sendMessage(poem.userId, 'شعر خوشگلت تایید شد :)');
   }
 
+  @Action(/edit_(.+)/)
+  async editPoem(@Ctx() ctx: Context & { match: RegExpMatchArray }) {
+    const poemId = ctx.match[1];
+    const chatId = ctx.chat?.id;
+    const userId = ctx.from?.id;
+    if (!chatId || !poemId || !userId) {
+      await ctx.answerCbQuery('خطا: بافت نشد!', { show_alert: true });
+      return;
+    }
+    const admins = await ctx.telegram.getChatAdministrators(chatId);
+    const isAdmin = admins.some((admin) => admin.user.id === userId);
+    if (!isAdmin) {
+      await ctx.answerCbQuery('فقط ادمین اجازه تایید دارد!', {
+        show_alert: true,
+      });
+      return;
+    }
+    await ctx.answerCbQuery();
+    await ctx.reply('✏ لطفا متن جدید را ارسال کنید.');
+    const poem = await this.poemModel.findById(poemId);
+    if (!poem) {
+      await ctx.answerCbQuery('خطا: شعر پیدا نشد!', { show_alert: true });
+      return;
+    }
+    sendPoemState.set(userId, {
+      step: 'waiting_poem',
+      poemId: poem?._id?.toString(),
+    });
+    await ctx.editMessageReplyMarkup(undefined);
+  }
+
   @Action(/delete_(.+)/)
   async deletePoem(@Ctx() ctx: Context & { match: RegExpMatchArray }) {
     const poemId = ctx.match[1];
@@ -93,9 +125,7 @@ export class BotUpdate {
       return;
     }
     const admins = await ctx.telegram.getChatAdministrators(chatId);
-    const isAdmin = await admins.some(
-      (admin) => admin.user.id === ctx.from?.id,
-    );
+    const isAdmin = admins.some((admin) => admin.user.id === ctx.from?.id);
     if (!isAdmin) {
       await ctx.answerCbQuery('فقط ادمین اجازه حذف شعر را دارد!', {
         show_alert: true,
@@ -115,8 +145,9 @@ export class BotUpdate {
   @On('text')
   async onText(@Ctx() ctx: Context) {
     const message = ctx.message;
+    const chatType = message?.chat.type;
 
-    if (!message || !('text' in message) || message.chat.type !== 'private') {
+    if (!message || !('text' in message)) {
       return;
     }
 
@@ -124,12 +155,15 @@ export class BotUpdate {
     const { text } = message;
     const state = sendPoemState.get(userId);
     if (!state) {
-      await ctx.reply('ابتدا روی دکمه ارسال شعر کلیک کن!');
+      if (chatType === 'private') {
+        await ctx.reply('ابتدا روی دکمه ارسال شعر کلیک کن!');
+        return;
+      }
       return;
     }
 
     if (state.step === 'waiting_poem') {
-      sendPoemState.set(userId, { step: 'waiting_poet', poem: text });
+      sendPoemState.set(userId, { ...state, step: 'waiting_poet', poem: text });
       await ctx.reply('شاعرش کیه؟');
       return;
     } else if (state.step === 'waiting_poet') {
@@ -147,35 +181,55 @@ export class BotUpdate {
         return;
       }
       const { poem, poet } = dataPlaceHolder;
-
-      const newPoem: HydratedDocument<Poem> = await this.poemModel.create({
-        userId,
-        username,
-        firstName: first_name,
-        lastName: last_name,
-        category: text,
-        text: poem,
-        poet,
-        isPublished: false,
-        approved: false,
-      });
-      sendPoemState.delete(userId);
       const groupId = this.config.get('TELEGRAM_GROUP_ID');
-      const poemId = newPoem._id?.toString();
-      await ctx.telegram.sendMessage(
-        groupId,
-        `شعر جدید:\n\n${newPoem.text}\nشاعر: ${newPoem.poet}\n دسته بندی: ${newPoem.category}`,
-        {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: '✅ تایید', callback_data: `approve_${poemId}` }],
-              [{ text: '✏ ویرایش', callback_data: `edit_${poemId}` }],
-              [{ text: '🗑 حذف', callback_data: `delete_${poemId}` }],
-            ],
+
+      const prevPoem = sendPoemState.get(userId)?.poemId;
+      if (!prevPoem && chatType === 'private') {
+        const newPoem: HydratedDocument<Poem> = await this.poemModel.create({
+          userId,
+          username,
+          firstName: first_name,
+          lastName: last_name,
+          category: text,
+          text: poem,
+          poet,
+          isPublished: false,
+          approved: false,
+        });
+        const poemId = newPoem._id?.toString();
+        await ctx.telegram.sendMessage(
+          groupId,
+          `شعر جدید:\n\n${newPoem.text}\nشاعر: ${newPoem.poet}\n دسته بندی: ${newPoem.category}`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '✅ تایید', callback_data: `approve_${poemId}` }],
+                [{ text: '✏ ویرایش', callback_data: `edit_${poemId}` }],
+                [{ text: '🗑 حذف', callback_data: `delete_${poemId}` }],
+              ],
+            },
           },
-        },
-      );
-      await ctx.reply('شعر زیبای شما ارسال شد ^^');
+        );
+        await ctx.reply('شعر زیبای شما ارسال شد ^^');
+      } else {
+        const existingPoem = await this.poemModel.findByIdAndUpdate(prevPoem, {
+          category: text,
+          text: poem,
+          poet,
+          approved:true
+        },{new:true});
+        if (!existingPoem || !prevPoem) {
+          await ctx.reply('خطا: شعر یافت نشد!');
+          sendPoemState.delete(userId);
+          return;
+        }
+        await ctx.reply('شعر ویرایش شد!');
+        await ctx.reply(
+          `شعر ویرایش شده:\n\n${existingPoem.text}\nشاعر: ${existingPoem.poet}\n دسته بندی: ${existingPoem.category}`,
+        );
+        await ctx.telegram.sendMessage(existingPoem.userId, 'شعر شما ویرایش و منتشر شد!');
+      }
+      sendPoemState.delete(userId);
     }
   }
 }
