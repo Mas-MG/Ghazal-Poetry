@@ -84,6 +84,34 @@ export class BotUpdate {
     await ctx.telegram.sendMessage(poem.userId, 'شعر خوشگلت تایید شد :)');
   }
 
+  @Action(/delete_(.+)/)
+  async deletePoem(@Ctx() ctx: Context & { match: RegExpMatchArray }) {
+    const poemId = ctx.match[1];
+    const chatId = ctx.chat?.id;
+    if (!poemId || !chatId) {
+      await ctx.answerCbQuery('خطا: یافت نشد.', { show_alert: true });
+      return;
+    }
+    const admins = await ctx.telegram.getChatAdministrators(chatId);
+    const isAdmin = await admins.some(
+      (admin) => admin.user.id === ctx.from?.id,
+    );
+    if (!isAdmin) {
+      await ctx.answerCbQuery('فقط ادمین اجازه حذف شعر را دارد!', {
+        show_alert: true,
+      });
+      return;
+    }
+    const poemToDel = await this.poemModel.findByIdAndDelete(poemId);
+    if (!poemToDel) {
+      await ctx.answerCbQuery('شعر یافت نشد!', { show_alert: true });
+      return;
+    }
+    await ctx.deleteMessage();
+    await ctx.answerCbQuery('🗑 شعر حذف شد');
+    await ctx.telegram.sendMessage(poemToDel.userId, 'شعر شما تایید نشد!');
+  }
+
   @On('text')
   async onText(@Ctx() ctx: Context) {
     const message = ctx.message;
