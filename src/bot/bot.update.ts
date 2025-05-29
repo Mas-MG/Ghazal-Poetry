@@ -1,4 +1,4 @@
-import { Update, On, Ctx, Start, Action } from 'nestjs-telegraf';
+import { Update, On, Ctx, Start, Action, Command } from 'nestjs-telegraf';
 import { Injectable } from '@nestjs/common';
 import { Context, Markup } from 'telegraf';
 import { ConfigService } from '@nestjs/config';
@@ -141,16 +141,33 @@ export class BotUpdate {
     await ctx.telegram.sendMessage(poemToDel.userId, 'شعر شما تایید نشد!');
   }
 
-  async showPoemsPage(ctx: Context, page: number) {
+  async showPoemsPage(
+    ctx: Context,
+    page: number,
+    category?: string,
+    poet?: string,
+  ) {
     const limit = 5;
+
+    const query: any = {};
+    if (category) {
+      query.category = category;
+    } else if (poet) {
+      query.poet = poet;
+    }
+
     const poems = await this.poemModel
-      .find({})
+      .find(query)
       .sort({ createdAt: -1 })
       .skip(page * limit)
       .limit(limit);
 
     if (!poems.length) {
-      await ctx.reply('هیچ شعری برای نمایش وجود ندارد.');
+      if (ctx.updateType === 'callback_query') {
+        await ctx.answerCbQuery('هیچ شعری برای نمایش وجود ندارد.');
+      } else {
+        await ctx.reply('هیچ شعری برای نمایش وجود ندارد.');
+      }
       return;
     }
 
@@ -161,58 +178,139 @@ export class BotUpdate {
       )
       .join('\n———\n');
 
-    await ctx.reply(messageText, {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            ...(page > 0
-              ? [Markup.button.callback('⬅ قبلی', `poems_page_${page - 1}`)]
-              : []),
-            ...(poems.length === limit
-              ? [Markup.button.callback('بعدی ➡', `poems_page_${page + 1}`)]
-              : []),
-          ],
-        ],
-      },
-    });
+    const keyboard = [
+      [
+        ...(page > 0
+          ? [
+              Markup.button.callback(
+                '⬅ قبلی',
+                `poems_page_${page - 1}_${category || ''}_${poet || ''}`,
+              ),
+            ]
+          : []),
+        ...(poems.length === limit
+          ? [
+              Markup.button.callback(
+                'بعدی ➡',
+                `poems_page_${page + 1}_${category || ''}_${poet || ''}`,
+              ),
+            ]
+          : []),
+      ],
+    ];
+
+    if (ctx.updateType === 'callback_query') {
+      try {
+        await ctx.editMessageText(messageText, {
+          reply_markup: {
+            inline_keyboard: keyboard,
+          },
+        });
+      } catch (e) {
+        // Fallback: if edit fails, send a new message
+        await ctx.reply(messageText, {
+          reply_markup: {
+            inline_keyboard: keyboard,
+          },
+        });
+      }
+    } else {
+      // New command message: just reply
+      await ctx.reply(messageText, {
+        reply_markup: {
+          inline_keyboard: keyboard,
+        },
+      });
+    }
   }
 
-  @Action(/poems_page_(\d+)/)
+  @Action(/poems_page_(\d+)_(.*)_(.*)/)
   async paginatePoems(@Ctx() ctx: Context & { match: RegExpMatchArray }) {
     const page = parseInt(ctx.match[1]);
+    const category = ctx.match[2] || undefined;
+    const poet = ctx.match[3] || undefined;
+
     const chatId = this.config.get('TELEGRAM_GROUP_ID');
     const isAdmin = await isAdminFn(ctx, chatId);
     if (!isAdmin) {
       await ctx.answerCbQuery('⛔ فقط ادمین‌ها اجازه مشاهده دارند.');
       return;
     }
+
     await ctx.answerCbQuery();
-    await this.showPoemsPage(ctx, page);
+    await this.showPoemsPage(ctx, page, category, poet);
+  }
+
+  @Command('poems')
+  async handlePoemsCommand(@Ctx() ctx: Context) {
+    const chatId = this.config.get('TELEGRAM_GROUP_ID');
+    const isAdmin = await isAdminFn(ctx, chatId); // or whatever your admin check is
+    if (!isAdmin) {
+      await ctx.reply('⛔ فقط ادمین‌ها اجازه مشاهده دارند.');
+      return;
+    }
+
+    await this.showPoemsPage(ctx, 0); // صفحه اول
+  }
+
+  @Command('cat')
+  async showByCategory(@Ctx() ctx: Context) {
+    const message = ctx.message;
+    if (!message || !('text' in message)) return;
+
+    const chatId = this.config.get('TELEGRAM_GROUP_ID');
+    const isAdmin = await isAdminFn(ctx, chatId);
+    if (!isAdmin) {
+      await ctx.reply('⛔ فقط ادمین‌ها اجازه مشاهده دارند.');
+      return;
+    }
+
+    const [, category] = message.text.split(' ', 2);
+    if (!category) {
+      await ctx.reply('❗ لطفا دسته‌بندی را مشخص کنید. مثلا:\n`/cat عاشقانه`', {
+        parse_mode: 'Markdown',
+      });
+      return;
+    }
+
+    await this.showPoemsPage(ctx, 0, category, undefined);
+  }
+
+  @Command('poet')
+  async showByPoet(@Ctx() ctx: Context) {
+    const message = ctx.message;
+    if (!message || !('text' in message)) return;
+
+    const chatId = this.config.get('TELEGRAM_GROUP_ID');
+    const isAdmin = await isAdminFn(ctx, chatId);
+    if (!isAdmin) {
+      await ctx.reply('⛔ فقط ادمین‌ها اجازه مشاهده دارند.');
+      return;
+    }
+
+    const [, poet] = message.text.split(' ', 2);
+    if (!poet) {
+      await ctx.reply('❗ لطفا نام شاعر را مشخص کنید. مثلا:\n`/poet سعدی`', {
+        parse_mode: 'Markdown',
+      });
+      return;
+    }
+
+    await this.showPoemsPage(ctx, 0, undefined, poet);
   }
 
   @On('text')
   async onText(@Ctx() ctx: Context) {
     const message = ctx.message;
     const chatType = message?.chat.type;
-    const chatId = this.config.get('TELEGRAM_GROUP_ID');
 
     if (!message || !('text' in message)) {
       return;
     }
 
-    const { text } = message;
-    if (text === '/poems') {
-      const isAdmin = await isAdminFn(ctx, chatId);
-      if (!isAdmin) {
-        await ctx.reply('⛔ فقط ادمین‌ها اجازه مشاهده دارند.');
-        return;
-      }
-      await this.showPoemsPage(ctx, 0); // صفحه اول
-      return;
-    }
-
     const { id: userId, username, first_name, last_name } = message.from;
     const state = sendPoemState.get(userId);
+    const { text } = message;
     if (!state) {
       if (chatType === 'private') {
         await ctx.reply('ابتدا روی دکمه ارسال شعر کلیک کن!');

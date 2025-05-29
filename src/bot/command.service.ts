@@ -12,6 +12,9 @@ export class BotCommandsService implements OnModuleInit {
     this.bot = new Telegraf(token);
     this.bot.telegram.setMyCommands([
       { command: 'start', description: 'گزینه ها' },
+      { command: 'poems', description: 'نمایش اشعار' },
+      { command: 'cat', description: 'نمایش اشعار بر اساس دسته بندی' },
+      { command: 'poet', description: 'نمایش اشعار بر اساس شاعر' },
     ]);
   }
 }
