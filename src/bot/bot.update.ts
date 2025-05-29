@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Poem } from './schema/bot.schema';
 import { HydratedDocument, Model } from 'mongoose';
+import { isAdminFn } from 'utils/isAdmin';
 
 const sendPoemState = new Map<
   number,
@@ -57,16 +58,16 @@ export class BotUpdate {
     );
   }
 
+  @Action('SHOW_POEM')
   @Action(/approve_(.+)/)
   async approvePoem(@Ctx() ctx: Context & { match: RegExpMatchArray }) {
     const poemId = ctx.match[1]; //Mongo db id
-    const chatId = ctx.chat?.id;
-    if (!chatId || !poemId) {
-      await ctx.answerCbQuery('خطا: بافت نشد!', { show_alert: true });
+    const chatId = this.config.get('TELEGRAM_GROUP_ID');
+    if (!poemId) {
+      await ctx.answerCbQuery('خطا: شعر بافت نشد!', { show_alert: true });
       return;
     }
-    const admins = await ctx.telegram.getChatAdministrators(chatId);
-    const isAdmin = admins.some((admin) => admin.user.id === ctx.from?.id);
+    const isAdmin = await isAdminFn(ctx, chatId);
     if (!isAdmin) {
       await ctx.answerCbQuery('فقط ادمین اجازه تایید دارد!', {
         show_alert: true,
@@ -88,14 +89,13 @@ export class BotUpdate {
   @Action(/edit_(.+)/)
   async editPoem(@Ctx() ctx: Context & { match: RegExpMatchArray }) {
     const poemId = ctx.match[1];
-    const chatId = ctx.chat?.id;
+    const chatId = this.config.get('TELEGRAM_GROUP_ID');
     const userId = ctx.from?.id;
-    if (!chatId || !poemId || !userId) {
-      await ctx.answerCbQuery('خطا: بافت نشد!', { show_alert: true });
+    if (!poemId || !userId) {
+      await ctx.answerCbQuery('خطا: شعر بافت نشد!', { show_alert: true });
       return;
     }
-    const admins = await ctx.telegram.getChatAdministrators(chatId);
-    const isAdmin = admins.some((admin) => admin.user.id === userId);
+    const isAdmin = await isAdminFn(ctx, chatId);
     if (!isAdmin) {
       await ctx.answerCbQuery('فقط ادمین اجازه تایید دارد!', {
         show_alert: true,
@@ -119,13 +119,12 @@ export class BotUpdate {
   @Action(/delete_(.+)/)
   async deletePoem(@Ctx() ctx: Context & { match: RegExpMatchArray }) {
     const poemId = ctx.match[1];
-    const chatId = ctx.chat?.id;
-    if (!poemId || !chatId) {
-      await ctx.answerCbQuery('خطا: یافت نشد.', { show_alert: true });
+    const chatId = this.config.get('TELEGRAM_GROUP_ID');
+    if (!poemId) {
+      await ctx.answerCbQuery('خطا: شعر یافت نشد.', { show_alert: true });
       return;
     }
-    const admins = await ctx.telegram.getChatAdministrators(chatId);
-    const isAdmin = admins.some((admin) => admin.user.id === ctx.from?.id);
+    const isAdmin = await isAdminFn(ctx, chatId);
     if (!isAdmin) {
       await ctx.answerCbQuery('فقط ادمین اجازه حذف شعر را دارد!', {
         show_alert: true,
@@ -142,17 +141,77 @@ export class BotUpdate {
     await ctx.telegram.sendMessage(poemToDel.userId, 'شعر شما تایید نشد!');
   }
 
+  async showPoemsPage(ctx: Context, page: number) {
+    const limit = 5;
+    const poems = await this.poemModel
+      .find({})
+      .sort({ createdAt: -1 })
+      .skip(page * limit)
+      .limit(limit);
+
+    if (!poems.length) {
+      await ctx.reply('هیچ شعری برای نمایش وجود ندارد.');
+      return;
+    }
+
+    const messageText = poems
+      .map(
+        (p, i) =>
+          `📄 ${page * limit + i + 1}:\n${p.text}\n— شاعر: ${p.poet || 'نامشخص'}\n— دسته بندی: ${p.category || 'نامشخص'}\n`,
+      )
+      .join('\n———\n');
+
+    await ctx.reply(messageText, {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            ...(page > 0
+              ? [Markup.button.callback('⬅ قبلی', `poems_page_${page - 1}`)]
+              : []),
+            ...(poems.length === limit
+              ? [Markup.button.callback('بعدی ➡', `poems_page_${page + 1}`)]
+              : []),
+          ],
+        ],
+      },
+    });
+  }
+
+  @Action(/poems_page_(\d+)/)
+  async paginatePoems(@Ctx() ctx: Context & { match: RegExpMatchArray }) {
+    const page = parseInt(ctx.match[1]);
+    const chatId = this.config.get('TELEGRAM_GROUP_ID');
+    const isAdmin = await isAdminFn(ctx, chatId);
+    if (!isAdmin) {
+      await ctx.answerCbQuery('⛔ فقط ادمین‌ها اجازه مشاهده دارند.');
+      return;
+    }
+    await ctx.answerCbQuery();
+    await this.showPoemsPage(ctx, page);
+  }
+
   @On('text')
   async onText(@Ctx() ctx: Context) {
     const message = ctx.message;
     const chatType = message?.chat.type;
+    const chatId = this.config.get('TELEGRAM_GROUP_ID');
 
     if (!message || !('text' in message)) {
       return;
     }
 
-    const { id: userId, username, first_name, last_name } = message.from;
     const { text } = message;
+    if (text === '/poems') {
+      const isAdmin = await isAdminFn(ctx, chatId);
+      if (!isAdmin) {
+        await ctx.reply('⛔ فقط ادمین‌ها اجازه مشاهده دارند.');
+        return;
+      }
+      await this.showPoemsPage(ctx, 0); // صفحه اول
+      return;
+    }
+
+    const { id: userId, username, first_name, last_name } = message.from;
     const state = sendPoemState.get(userId);
     if (!state) {
       if (chatType === 'private') {
