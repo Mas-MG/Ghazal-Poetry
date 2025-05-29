@@ -212,22 +212,40 @@ export class BotUpdate {
         );
         await ctx.reply('شعر زیبای شما ارسال شد ^^');
       } else {
-        const existingPoem = await this.poemModel.findByIdAndUpdate(prevPoem, {
-          category: text,
-          text: poem,
-          poet,
-          approved:true
-        },{new:true});
+        const existingPoem = await this.poemModel.findByIdAndUpdate(
+          prevPoem,
+          {
+            category: text,
+            text: poem,
+            poet,
+          },
+          { new: true },
+        );
         if (!existingPoem || !prevPoem) {
           await ctx.reply('خطا: شعر یافت نشد!');
           sendPoemState.delete(userId);
           return;
         }
+
+        const poemId = existingPoem._id?.toString();
+
         await ctx.reply('شعر ویرایش شد!');
         await ctx.reply(
           `شعر ویرایش شده:\n\n${existingPoem.text}\nشاعر: ${existingPoem.poet}\n دسته بندی: ${existingPoem.category}`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '✅ تایید', callback_data: `approve_${poemId}` }],
+                [{ text: '✏ ویرایش', callback_data: `edit_${poemId}` }],
+                [{ text: '🗑 حذف', callback_data: `delete_${poemId}` }],
+              ],
+            },
+          },
         );
-        await ctx.telegram.sendMessage(existingPoem.userId, 'شعر شما ویرایش و منتشر شد!');
+        await ctx.telegram.sendMessage(
+          existingPoem.userId,
+          'شعر شما ویرایش شد!',
+        );
       }
       sendPoemState.delete(userId);
     }
