@@ -19,7 +19,6 @@ import { ScheduleModule } from '@nestjs/schedule';
       inject: [ConfigService],
     }),
 
-    // Configure the Telegram bot with the token from .env
     TelegrafModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: async (cs: ConfigService) => {
@@ -36,10 +35,9 @@ import { ScheduleModule } from '@nestjs/schedule';
       },
       inject: [ConfigService],
     }),
-
-    // Our BotModule (contains the update handler)
     BotModule,
     ScheduleModule.forRoot(),
   ],
+  exports: [TelegrafModule],
 })
 export class AppModule {}
