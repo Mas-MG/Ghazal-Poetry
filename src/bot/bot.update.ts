@@ -17,6 +17,10 @@ const sendPoemState = new Map<
   }
 >();
 
+// Limitation for sending message to avoid spam
+const lastSubmissionTimes = new Map<number, number>();
+const SUBMISSION_INTERVAL = 1 * 60 * 1000; // 1 minutes
+
 @Update()
 @Injectable()
 export class BotUpdate {
@@ -45,6 +49,18 @@ export class BotUpdate {
     }
     if (!ctx.from) return;
     const userId = ctx.from.id;
+    const lastSubmission = lastSubmissionTimes.get(userId) || 0;
+    const now = Date.now();
+
+    if (now - lastSubmission < SUBMISSION_INTERVAL) {
+      const remainingSeconds = Math.ceil(
+        (SUBMISSION_INTERVAL - (now - lastSubmission)) / 1000,
+      );
+      await ctx.reply(
+        `⌛ لطفاً ${Math.round(remainingSeconds )} ثانیه صبر کن و بعد دوباره امتحان کن.`,
+      );
+      return;
+    }
     sendPoemState.set(userId, { step: 'waiting_poem' });
     await ctx.answerCbQuery();
     await ctx.reply('هرچه دل تنگت میخواهد بگو...');
@@ -58,7 +74,6 @@ export class BotUpdate {
     );
   }
 
-  @Action('SHOW_POEM')
   @Action(/approve_(.+)/)
   async approvePoem(@Ctx() ctx: Context & { match: RegExpMatchArray }) {
     const poemId = ctx.match[1]; //Mongo db id
@@ -341,6 +356,7 @@ export class BotUpdate {
       const groupId = this.config.get('TELEGRAM_GROUP_ID');
 
       const prevPoem = sendPoemState.get(userId)?.poemId;
+
       if (!prevPoem && chatType === 'private') {
         const newPoem: HydratedDocument<Poem> = await this.poemModel.create({
           userId,
@@ -353,6 +369,7 @@ export class BotUpdate {
           isPublished: false,
           approved: false,
         });
+        lastSubmissionTimes.set(userId, Date.now());
         const poemId = newPoem._id?.toString();
         await ctx.telegram.sendMessage(
           groupId,
