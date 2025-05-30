@@ -6,6 +6,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Poem } from './schema/bot.schema';
 import { HydratedDocument, Model } from 'mongoose';
 import { isAdminFn } from 'utils/isAdmin';
+import { normalizePoemText } from 'utils/duplicate';
 
 const sendPoemState = new Map<
   number,
@@ -57,7 +58,7 @@ export class BotUpdate {
         (SUBMISSION_INTERVAL - (now - lastSubmission)) / 1000,
       );
       await ctx.reply(
-        `⌛ لطفاً ${Math.round(remainingSeconds )} ثانیه صبر کن و بعد دوباره امتحان کن.`,
+        `⌛ لطفاً ${Math.round(remainingSeconds)} ثانیه صبر کن و بعد دوباره امتحان کن.`,
       );
       return;
     }
@@ -358,6 +359,21 @@ export class BotUpdate {
       const prevPoem = sendPoemState.get(userId)?.poemId;
 
       if (!prevPoem && chatType === 'private') {
+
+        // Avoiding to save duplicate poem
+        const normalizedText = normalizePoemText(poem);
+        const poems = await this.poemModel.find({}).select('text').lean();
+        const isDuplicate = poems.some(
+          (p) => normalizePoemText(p.text) === normalizedText,
+        );
+
+        if (isDuplicate) {
+          await ctx.reply('❗ این شعر قبلاً ثبت شده است.');
+          sendPoemState.delete(userId);
+          return;
+        }
+
+        // Save poem
         const newPoem: HydratedDocument<Poem> = await this.poemModel.create({
           userId,
           username,
