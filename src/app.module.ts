@@ -25,7 +25,7 @@ import { ScheduleModule } from '@nestjs/schedule';
         const token = cs.get<string>('TELEGRAM_BOT_TOKEN');
         if (!token) {
           throw new Error(
-            'TELEGRAM_BOT_TOKEN is not defined in environment variables',
+            'توکن یافت نشد!'
           );
         }
 

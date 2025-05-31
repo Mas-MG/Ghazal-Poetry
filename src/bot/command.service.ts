@@ -14,7 +14,7 @@ export class BotCommandsService implements OnModuleInit {
     const groupId = this.configService.get<string>('TELEGRAM_GROUP_ID');
 
     if (!token) throw new Error('توکن یافت نشد!');
-    if (!groupId) throw new Error('آی‌دی گروه یافت نشد!');
+    if (!groupId) throw new Error('آیدی گروه یافت نشد!');
 
     this.bot = new Telegraf(token);
 

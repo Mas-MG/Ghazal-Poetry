@@ -38,7 +38,7 @@ export class BotUpdate {
   @Start()
   async startCommand(@Ctx() ctx: Context) {
     await ctx.reply(
-      'خوش اومدی. میخوای چیکار کنی؟',
+      'سلام خوش اومدی❤️\nمرسی که غزل رو انتخاب کردی ☺️\nرو یکی از گزینه ها کلیک کن 👇',
       Markup.inlineKeyboard([
         Markup.button.callback('ارسال شعر', 'SEND_POEM'),
         Markup.button.callback('راهنما', 'HELP'),
@@ -50,7 +50,7 @@ export class BotUpdate {
   async sendPoem(@Ctx() ctx: Context) {
     const chatType = ctx.chat?.type;
     if (chatType !== 'private') {
-      await ctx.reply('ارسال شعر در گروه مجاز نمی باشد.');
+      await ctx.reply('ارسال شعر در گروه مجاز نمی باشد❌');
       return;
     }
     if (!ctx.from) return;
@@ -72,14 +72,14 @@ export class BotUpdate {
 
     sendPoemState.set(userId, { step: 'waiting_poem' });
     await ctx.answerCbQuery();
-    await ctx.reply('هرچه دل تنگت میخواهد بگو...');
+    await ctx.reply('هرچه دل تنگت میخواهد بگو...\n\n🩶 شعر فقط باید شامل حروف فارسی، فاصله، نقطه و یک یا دو بیت باشد، مانند:\n\n♦️ دارم امید عاطفتی از جناب دوست،\nکردم جنایتی و امیدم به عفو اوست\n\nیا\n\n♦️ دارم امید عاطفتی از جناب دوست،\nکردم جنایتی و امیدم به عفو اوست،\nدانم که بگذرد ز سر جرم من که او،\nگر چه پریوش است ولیکن فرشته خوست');
   }
 
   @Action('HELP')
   async showInstructor(@Ctx() ctx: Context) {
     await ctx.answerCbQuery();
     await ctx.reply(
-      '1. ارسال شعر در گروه مجاز نمی باشد.\n2. ویرایش و حذف شعر توسط ادمین "طاها" امکان پذیر است.\n3. پس از ارسال شعر تا تایید آن توسط ادمین منتظر بمانید.\n 4. در صورت عدم تایید شعر، شعر حذف خواهد شد.',
+      '1. ارسال شعر در گروه مجاز نمی باشد.\n2. ویرایش و حذف شعر توسط ادمین امکان پذیر است.\n3. پس از ارسال شعر تا تایید آن توسط ادمین منتظر بمانید.\n 4. در صورت عدم تایید شعر، شعر حذف خواهد شد.',
     );
   }
 
@@ -88,26 +88,26 @@ export class BotUpdate {
     const poemId = ctx.match[1]; //Mongo db id
     const chatId = this.config.get('TELEGRAM_GROUP_ID');
     if (!poemId) {
-      await ctx.answerCbQuery('خطا: شعر بافت نشد!', { show_alert: true });
+      await ctx.answerCbQuery('شعر بافت نشد ❌', { show_alert: true });
       return;
     }
     const isAdmin = await isAdminFn(ctx, chatId);
     if (!isAdmin) {
-      await ctx.answerCbQuery('فقط ادمین اجازه تایید دارد!', {
+      await ctx.answerCbQuery('فقط ادمین اجازه تایید دارد ❌', {
         show_alert: true,
       });
       return;
     }
     const poem = await this.poemModel.findById(poemId);
     if (!poem) {
-      await ctx.answerCbQuery('خطا: شعر پیدا نشد!', { show_alert: true });
+      await ctx.answerCbQuery('شعر بافت نشد ❌', { show_alert: true });
       return;
     }
     await this.poemModel.findByIdAndUpdate(poemId, { approved: true });
 
     await ctx.answerCbQuery('✅ شعر تایید شد');
     await ctx.editMessageReplyMarkup(undefined);
-    await ctx.telegram.sendMessage(poem.userId, 'شعر خوشگلت تایید شد :)');
+    await ctx.telegram.sendMessage(poem.userId, 'شعر خوشگلت تایید شد 😍');
   }
 
   @Action(/edit_(.+)/)
@@ -116,21 +116,21 @@ export class BotUpdate {
     const chatId = this.config.get('TELEGRAM_GROUP_ID');
     const userId = ctx.from?.id;
     if (!poemId || !userId) {
-      await ctx.answerCbQuery('خطا: شعر بافت نشد!', { show_alert: true });
+      await ctx.answerCbQuery('شعر بافت نشد ❌', { show_alert: true });
       return;
     }
     const isAdmin = await isAdminFn(ctx, chatId);
     if (!isAdmin) {
-      await ctx.answerCbQuery('فقط ادمین اجازه تایید دارد!', {
+      await ctx.answerCbQuery('فقط ادمین اجازه تایید دارد ❌', {
         show_alert: true,
       });
       return;
     }
     await ctx.answerCbQuery();
-    await ctx.reply('✏ لطفا متن جدید را ارسال کنید.');
+    await ctx.reply('✏️ لطفا متن جدید را ارسال کنید.');
     const poem = await this.poemModel.findById(poemId);
     if (!poem) {
-      await ctx.answerCbQuery('خطا: شعر پیدا نشد!', { show_alert: true });
+      await ctx.answerCbQuery('شعر بافت نشد ❌', { show_alert: true });
       return;
     }
     sendPoemState.set(userId, {
@@ -145,24 +145,27 @@ export class BotUpdate {
     const poemId = ctx.match[1];
     const chatId = this.config.get('TELEGRAM_GROUP_ID');
     if (!poemId) {
-      await ctx.answerCbQuery('خطا: شعر یافت نشد.', { show_alert: true });
+      await ctx.answerCbQuery('شعر بافت نشد ❌', { show_alert: true });
       return;
     }
     const isAdmin = await isAdminFn(ctx, chatId);
     if (!isAdmin) {
-      await ctx.answerCbQuery('فقط ادمین اجازه حذف شعر را دارد!', {
+      await ctx.answerCbQuery('فقط ادمین اجازه حذف شعر را دارد ❌', {
         show_alert: true,
       });
       return;
     }
     const poemToDel = await this.poemModel.findByIdAndDelete(poemId);
     if (!poemToDel) {
-      await ctx.answerCbQuery('شعر یافت نشد!', { show_alert: true });
+      await ctx.answerCbQuery('شعر بافت نشد ❌', { show_alert: true });
       return;
     }
     await ctx.deleteMessage();
     await ctx.answerCbQuery('🗑 شعر حذف شد');
-    await ctx.telegram.sendMessage(poemToDel.userId, 'شعر شما تایید نشد!');
+    await ctx.telegram.sendMessage(
+      poemToDel.userId,
+      'شعرت تایید نشد 😔\nاصلاحش کن و دوباره برامون بفرست ☺️',
+    );
   }
 
   async showPoemsPage(
@@ -188,9 +191,9 @@ export class BotUpdate {
 
     if (!poems.length) {
       if (ctx.updateType === 'callback_query') {
-        await ctx.answerCbQuery('هیچ شعری برای نمایش وجود ندارد.');
+        await ctx.answerCbQuery('هیچ شعری برای نمایش وجود ندارد ❗️');
       } else {
-        await ctx.reply('هیچ شعری برای نمایش وجود ندارد.');
+        await ctx.reply('هیچ شعری برای نمایش وجود ندارد ❗️');
       }
       return;
     }
@@ -198,7 +201,7 @@ export class BotUpdate {
     const messageText = poems
       .map(
         (p, i) =>
-          `📄 ${page * limit + i + 1}:\n${p.text}\n— شاعر: ${p.poet || 'نامشخص'}\n— دسته بندی: ${p.category || 'نامشخص'}\n`,
+          `📄 ${page * limit + i + 1}:\n${p.text}\n\n— شاعر: ${p.poet || 'نامشخص'}\n— دسته بندی: ${p.category || 'نامشخص'}\n`,
       )
       .join('\n———\n');
 
@@ -337,7 +340,7 @@ export class BotUpdate {
     const { text } = message;
     if (!state) {
       if (chatType === 'private') {
-        await ctx.reply('ابتدا روی دکمه ارسال شعر کلیک کن!');
+        await ctx.reply('ابتدا روی دکمه ارسال شعر کلیک کن 🩶');
         return;
       }
       return;
@@ -346,7 +349,7 @@ export class BotUpdate {
     if (state.step === 'waiting_poem') {
       if (!isValidText(text)) {
         await ctx.reply(
-          '❗ شعر فقط باید شامل حروف فارسی، فاصله، نقطه یا یک یا دو بیت باشد.',
+          '🩶 شعر فقط باید شامل حروف فارسی، فاصله، نقطه و یک یا دو بیت باشد، مانند:\n\n♦️ دارم امید عاطفتی از جناب دوست،\nکردم جنایتی و امیدم به عفو اوست\n\nیا\n\n♦️ دارم امید عاطفتی از جناب دوست،\nکردم جنایتی و امیدم به عفو اوست،\nدانم که بگذرد ز سر جرم من که او،\nگر چه پریوش است ولیکن فرشته خوست',
         );
         return;
       }
@@ -358,7 +361,7 @@ export class BotUpdate {
       );
 
       if (isDuplicate) {
-        await ctx.reply('❗ این شعر قبلاً ثبت شده است. دوباره دیگه بنویس');
+        await ctx.reply('این شعر قبلاً ثبت شده است. یکی دیگه بنویس 🩶');
         return;
       }
       sendPoemState.set(userId, { ...state, step: 'waiting_poet', poem: text });
@@ -366,7 +369,7 @@ export class BotUpdate {
       return;
     } else if (state.step === 'waiting_poet') {
       if (!isValidNameOrCategory(text)) {
-        await ctx.reply('❗ نام شاعر فقط باید شامل حروف فارسی و فاصله باشد.');
+        await ctx.reply('نام شاعر فقط باید شامل حروف فارسی و فاصله باشد ❗️');
         return;
       }
       sendPoemState.set(userId, {
@@ -379,13 +382,13 @@ export class BotUpdate {
     } else if (state.step === 'waiting_category') {
       if (!isValidNameOrCategory(text)) {
         await ctx.reply(
-          '❗ دسته‌بندی فقط باید شامل حروف فارسی یا عربی و فاصله باشد.',
+          'دسته‌بندی فقط باید شامل حروف فارسی یا عربی و فاصله باشد ❗️',
         );
         return;
       }
       const dataPlaceHolder = sendPoemState.get(userId);
       if (!dataPlaceHolder?.poem || !dataPlaceHolder?.poet) {
-        await ctx.reply('لطفا شعر و شاعر را وارد کنید.');
+        await ctx.reply('لطفا شعر و شاعر را وارد کنید ❗️');
         return;
       }
       const { poem, poet } = dataPlaceHolder;
@@ -431,7 +434,7 @@ export class BotUpdate {
         const poemId = newPoem._id?.toString();
         await ctx.telegram.sendMessage(
           groupId,
-          `شعر جدید:\n\n${newPoem.text}\nشاعر: ${newPoem.poet}\n دسته بندی: ${newPoem.category}`,
+          `☘️ شعر جدید:\n\n${newPoem.text}\n\n♦️ شاعر: ${newPoem.poet}\n\n♦️ دسته بندی: ${newPoem.category}`,
           {
             reply_markup: {
               inline_keyboard: [
@@ -444,7 +447,7 @@ export class BotUpdate {
             },
           },
         );
-        await ctx.reply('شعر زیبای شما ارسال شد ^^');
+        await ctx.reply('شعر زیبای شما ارسال شد 💚');
       } else {
         const existingPoem = await this.poemModel.findByIdAndUpdate(
           prevPoem,
@@ -456,16 +459,16 @@ export class BotUpdate {
           { new: true },
         );
         if (!existingPoem || !prevPoem) {
-          await ctx.reply('خطا: شعر یافت نشد!');
+          await ctx.reply('شعر بافت نشد ❌');
           sendPoemState.delete(userId);
           return;
         }
 
         const poemId = existingPoem._id?.toString();
 
-        await ctx.reply('شعر ویرایش شد!');
+        await ctx.reply('شعر ویرایش شد ✅');
         await ctx.reply(
-          `شعر ویرایش شده:\n\n${existingPoem.text}\nشاعر: ${existingPoem.poet}\n دسته بندی: ${existingPoem.category}`,
+          `☘️ شعر جدید:\n\n${existingPoem.text}\n\n♦️ شاعر: ${existingPoem.poet}\n\n♦️ دسته بندی: ${existingPoem.category}`,
           {
             reply_markup: {
               inline_keyboard: [
@@ -480,7 +483,7 @@ export class BotUpdate {
         );
         await ctx.telegram.sendMessage(
           existingPoem.userId,
-          'شعر شما ویرایش شد!',
+          'شعر شما ویرایش شد ☘️',
         );
       }
       sendPoemState.delete(userId);
