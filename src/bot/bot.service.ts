@@ -33,13 +33,18 @@ export class PoemSchedulerService {
 
     const channelId = this.config.get('TELEGRAM_CHANNEL_ID');
 
-    const message = `📝 شعر تصادفی:\n\n${poem.text}\n— شاعر: ${poem.poet || 'نامشخص'}\n— دسته: ${poem.category || 'نامشخص'}`;
+    const message = `${poem.text}\n\n- ${poem.poet || 'نامشخص'}`;
 
     await this.bot.telegram.sendMessage(channelId, message);
   }
 
-  @Cron('0 6-12/3 * * *')
-  async sendEvery3HoursBetween6And12() {
+  // @Cron('0 6-12/3 * * *')
+  // async sendEvery3HoursBetween6And12() {
+  //   await this.sendRandomPoem();
+  // }
+
+  @Cron('*/10 * * * * *') // every 10 seconds
+  async sendEvery10Seconds() {
     await this.sendRandomPoem();
   }
 }

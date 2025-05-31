@@ -346,7 +346,7 @@ export class BotUpdate {
     if (state.step === 'waiting_poem') {
       if (!isValidText(text)) {
         await ctx.reply(
-          '❗ شعر فقط باید شامل حروف فارسی، فاصله، نقطه یا ویرگول باشد.',
+          '❗ شعر فقط باید شامل حروف فارسی، فاصله، نقطه یا یک یا دو بیت باشد.',
         );
         return;
       }
