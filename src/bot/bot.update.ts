@@ -7,6 +7,7 @@ import { Poem } from './schema/bot.schema';
 import { HydratedDocument, Model } from 'mongoose';
 import { isAdminFn } from 'utils/isAdmin';
 import { normalizePoemText } from 'utils/duplicate';
+import { isValidNameOrCategory, isValidText } from 'utils/textValidation';
 
 const sendPoemState = new Map<
   number,
@@ -180,7 +181,7 @@ export class BotUpdate {
     }
 
     const poems = await this.poemModel
-      .find(query)
+      .find({ ...query, approved: false })
       .sort({ createdAt: -1 })
       .skip(page * limit)
       .limit(limit);
@@ -343,10 +344,31 @@ export class BotUpdate {
     }
 
     if (state.step === 'waiting_poem') {
+      if (!isValidText(text)) {
+        await ctx.reply(
+          '❗ شعر فقط باید شامل حروف فارسی، فاصله، نقطه یا ویرگول باشد.',
+        );
+        return;
+      }
+      // Avoiding to save duplicate poem
+      const normalizedText = normalizePoemText(text);
+      const poems = await this.poemModel.find({}).select('text').lean();
+      const isDuplicate = poems.some(
+        (p) => normalizePoemText(p.text) === normalizedText,
+      );
+
+      if (isDuplicate) {
+        await ctx.reply('❗ این شعر قبلاً ثبت شده است. دوباره دیگه بنویس');
+        return;
+      }
       sendPoemState.set(userId, { ...state, step: 'waiting_poet', poem: text });
       await ctx.reply('شاعرش کیه؟');
       return;
     } else if (state.step === 'waiting_poet') {
+      if (!isValidNameOrCategory(text)) {
+        await ctx.reply('❗ نام شاعر فقط باید شامل حروف فارسی و فاصله باشد.');
+        return;
+      }
       sendPoemState.set(userId, {
         ...state,
         step: 'waiting_category',
@@ -355,6 +377,12 @@ export class BotUpdate {
       await ctx.reply('موضوعش چیه؟');
       return;
     } else if (state.step === 'waiting_category') {
+      if (!isValidNameOrCategory(text)) {
+        await ctx.reply(
+          '❗ دسته‌بندی فقط باید شامل حروف فارسی یا عربی و فاصله باشد.',
+        );
+        return;
+      }
       const dataPlaceHolder = sendPoemState.get(userId);
       if (!dataPlaceHolder?.poem || !dataPlaceHolder?.poet) {
         await ctx.reply('لطفا شعر و شاعر را وارد کنید.');
@@ -366,19 +394,6 @@ export class BotUpdate {
       const prevPoem = sendPoemState.get(userId)?.poemId;
 
       if (!prevPoem && chatType === 'private') {
-        // Avoiding to save duplicate poem
-        const normalizedText = normalizePoemText(poem);
-        const poems = await this.poemModel.find({}).select('text').lean();
-        const isDuplicate = poems.some(
-          (p) => normalizePoemText(p.text) === normalizedText,
-        );
-
-        if (isDuplicate) {
-          await ctx.reply('❗ این شعر قبلاً ثبت شده است.');
-          sendPoemState.delete(userId);
-          return;
-        }
-
         const now = Date.now();
 
         // 2. Track timestamps
