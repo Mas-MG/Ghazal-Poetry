@@ -65,8 +65,8 @@ export class BotUpdate {
         `🚫 به دلیل ارسال زیاد، به مدت ${remaining} دقیقه مسدود شدید.`,
       );
       return;
-    }else if (banExpiry && banExpiry > now){
-      userBanMap.delete(userId)
+    } else if (banExpiry && banExpiry > now) {
+      userBanMap.delete(userId);
     }
 
     sendPoemState.set(userId, { step: 'waiting_poem' });
@@ -420,9 +420,11 @@ export class BotUpdate {
           {
             reply_markup: {
               inline_keyboard: [
-                [{ text: '✅ تایید', callback_data: `approve_${poemId}` }],
-                [{ text: '✏ ویرایش', callback_data: `edit_${poemId}` }],
-                [{ text: '🗑 حذف', callback_data: `delete_${poemId}` }],
+                [
+                  { text: '✅ تایید', callback_data: `approve_${poemId}` },
+                  { text: '✏ ویرایش', callback_data: `edit_${poemId}` },
+                  { text: '🗑 حذف', callback_data: `delete_${poemId}` },
+                ],
               ],
             },
           },
@@ -452,9 +454,11 @@ export class BotUpdate {
           {
             reply_markup: {
               inline_keyboard: [
-                [{ text: '✅ تایید', callback_data: `approve_${poemId}` }],
-                [{ text: '✏ ویرایش', callback_data: `edit_${poemId}` }],
-                [{ text: '🗑 حذف', callback_data: `delete_${poemId}` }],
+                [
+                  { text: '✅ تایید', callback_data: `approve_${poemId}` },
+                  { text: '✏ ویرایش', callback_data: `edit_${poemId}` },
+                  { text: '🗑 حذف', callback_data: `delete_${poemId}` },
+                ],
               ],
             },
           },
