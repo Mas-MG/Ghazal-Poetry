@@ -18,9 +18,13 @@ const sendPoemState = new Map<
   }
 >();
 
-// Limitation for sending message to avoid spam
-const lastSubmissionTimes = new Map<number, number>();
-const SUBMISSION_INTERVAL = 1 * 60 * 1000; // 1 minutes
+// Limit for sending message to avoid spam
+const userPoemTimestamps = new Map<number, number[]>(); // userId -> [timestamps]
+const userBanMap = new Map<number, number>(); // userId -> banExpiryTimestamp
+
+const MAX_POEMS = 3; // Max poems allowed
+const TIME_WINDOW = 60 * 1000; // 30 seconds
+const BAN_DURATION = 5 * 60 * 1000; // 5 minutes
 
 @Update()
 @Injectable()
@@ -50,18 +54,21 @@ export class BotUpdate {
     }
     if (!ctx.from) return;
     const userId = ctx.from.id;
-    const lastSubmission = lastSubmissionTimes.get(userId) || 0;
+
     const now = Date.now();
 
-    if (now - lastSubmission < SUBMISSION_INTERVAL) {
-      const remainingSeconds = Math.ceil(
-        (SUBMISSION_INTERVAL - (now - lastSubmission)) / 1000,
-      );
+    // 1. Check if user is banned
+    const banExpiry = userBanMap.get(userId);
+    if (banExpiry && banExpiry > now) {
+      const remaining = Math.ceil((banExpiry - now) / 60000);
       await ctx.reply(
-        `⌛ لطفاً ${Math.round(remainingSeconds)} ثانیه صبر کن و بعد دوباره امتحان کن.`,
+        `🚫 به دلیل ارسال زیاد، به مدت ${remaining} دقیقه مسدود شدید.`,
       );
       return;
+    }else if (banExpiry && banExpiry > now){
+      userBanMap.delete(userId)
     }
+
     sendPoemState.set(userId, { step: 'waiting_poem' });
     await ctx.answerCbQuery();
     await ctx.reply('هرچه دل تنگت میخواهد بگو...');
@@ -359,7 +366,6 @@ export class BotUpdate {
       const prevPoem = sendPoemState.get(userId)?.poemId;
 
       if (!prevPoem && chatType === 'private') {
-
         // Avoiding to save duplicate poem
         const normalizedText = normalizePoemText(poem);
         const poems = await this.poemModel.find({}).select('text').lean();
@@ -371,6 +377,27 @@ export class BotUpdate {
           await ctx.reply('❗ این شعر قبلاً ثبت شده است.');
           sendPoemState.delete(userId);
           return;
+        }
+
+        const now = Date.now();
+
+        // 2. Track timestamps
+        const timestamps = userPoemTimestamps.get(userId) || [];
+        const filtered = timestamps.filter((ts) => now - ts < TIME_WINDOW);
+
+        filtered.push(now);
+        userPoemTimestamps.set(userId, filtered);
+
+        // 3. Ban if exceeded
+        if (filtered.length >= MAX_POEMS) {
+          userBanMap.set(userId, now + BAN_DURATION);
+          userPoemTimestamps.delete(userId); // Clear spam log
+          sendPoemState.delete(userId);
+
+          // await ctx.reply(
+          //   `🚫 به دلیل ارسال زیاد، به مدت ${BAN_DURATION / 60000} دقیقه مسدود شدید.`,
+          // );
+          // return;
         }
 
         // Save poem
@@ -385,7 +412,7 @@ export class BotUpdate {
           isPublished: false,
           approved: false,
         });
-        lastSubmissionTimes.set(userId, Date.now());
+
         const poemId = newPoem._id?.toString();
         await ctx.telegram.sendMessage(
           groupId,
