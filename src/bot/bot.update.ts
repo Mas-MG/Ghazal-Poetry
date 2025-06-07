@@ -194,8 +194,8 @@ export class BotUpdate {
               ],
               [
                 {
-                  text: '🕔 5 عصر تا 12 شب',
-                  callback_data: `time_17_24_${channelId}`,
+                  text: '🕔 6 عصر تا 12 شب',
+                  callback_data: `time_18_24_${channelId}`,
                 },
               ],
             ],

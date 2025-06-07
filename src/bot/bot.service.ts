@@ -27,10 +27,19 @@ export class PoemSchedulerService {
     for (const channel of allChannels) {
       const [start, end] = channel.timeRange.split('_').map(Number);
 
-      const isActive =
-        start < end ? hour >= start && hour < end : hour >= start || hour < end; // handles wrap-around (e.g., 17–24)
+      const endHour = end === 24 ? 0 : end;
 
-      if (!isActive) continue;
+      const isInTimeRange =
+        start < endHour
+          ? hour >= start && hour < endHour
+          : hour >= start || hour < endHour;
+
+      const shouldSendThisHour = isInTimeRange && (hour - start + 24) % 3 === 0;
+
+      // const shouldSendThisHour = isInTimeRange ;
+      // console.log(shouldSendThisHour,start,endHour,hour)
+
+      if (!shouldSendThisHour) continue;
 
       const query: any = {
         approved: true,
@@ -65,13 +74,13 @@ export class PoemSchedulerService {
     }
   }
 
-  // @Cron('0 6-12/3 * * *')
-  // async sendEvery3HoursBetween6And12() {
-  //   await this.sendRandomPoem();
-  // }
-
-  @Cron('*/10 * * * * *') // every 10 seconds
-  async sendEvery10Seconds() {
+  @Cron('0 * * * *') // every hour at minute 0
+  async sendEveryHour() {
     await this.sendRandomPoemsToChannels();
   }
+
+  // @Cron('*/10 * * * * *') // every 10 seconds
+  // async sendEvery10Seconds() {
+  //   await this.sendRandomPoemsToChannels();
+  // }
 }
