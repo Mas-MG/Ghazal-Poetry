@@ -20,9 +20,6 @@ export class Poem extends Document {
   @Prop({ required: true })
   text: string;
 
-  @Prop({ default: false })
-  isPublished: boolean;
-
   @Prop()
   category: string;
 
@@ -30,7 +27,10 @@ export class Poem extends Document {
   poet: string;
 
   @Prop()
-  approved:boolean
+  approved: boolean;
+
+  @Prop({ type: [String], default: [] })
+  channels: string[];
 }
 
 export const PoemSchema = SchemaFactory.createForClass(Poem);

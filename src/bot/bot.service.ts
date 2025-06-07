@@ -34,7 +34,7 @@ export class PoemSchedulerService {
 
       const query: any = {
         approved: true,
-        isPublished: false,
+        channels: { $ne: channel.channelId },
       };
 
       if (!channel.allCategories && channel.categories?.length) {
@@ -48,7 +48,9 @@ export class PoemSchedulerService {
       const poem = await this.poemModel.findOne(query).skip(randomIndex).lean();
       if (!poem) continue;
 
-      await this.poemModel.findByIdAndUpdate(poem._id, { isPublished: true });
+      await this.poemModel.findByIdAndUpdate(poem._id, {
+        $addToSet: { channels: channel.channelId },
+      });
 
       const message = `${poem.text}\n\n- ${poem.poet || 'نامشخص'}`;
 

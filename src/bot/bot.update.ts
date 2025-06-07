@@ -49,7 +49,7 @@ export class BotUpdate {
         ],
         [
           Markup.button.callback('افزودن به کانال', 'ADD_BOT_TO_CHANNEL'),
-          Markup.button.callback('2افزودن به کانال', 'time_10'),
+          // Markup.button.callback('2افزودن به کانال', 'time_10'),
         ],
       ]),
     );
@@ -77,17 +77,33 @@ export class BotUpdate {
     const update = ctx.update as any;
     const chat = update.my_chat_member?.chat;
     const newStatus = update.my_chat_member?.new_chat_member?.status;
+    const channelId = chat?.id.toString();
+    const userId = update.my_chat_member.from.id;
+
+    const existingChannel = await this.channelModel.findOne({ channelId });
+
+    if (existingChannel && !['left', 'kicked'].includes(newStatus)) {
+      return;
+    } else if (existingChannel && ['left', 'kicked'].includes(newStatus)) {
+      await this.channelModel.deleteOne({ channelId });
+      const poems = await this.poemModel.find().lean();
+      for (const poem of poems) {
+        if (poem.channels.includes(channelId)) {
+          const updatedChannels = poem.channels.filter(
+            (channel) => channel !== channelId,
+          );
+
+          await this.poemModel.updateOne(
+            { _id: poem._id },
+            { $set: { channels: updatedChannels } },
+          );
+        }
+      }
+    }
 
     // Only respond to being added to a channel
     if (chat?.type === 'channel' && newStatus === 'administrator') {
-      const channelId = chat?.id.toString();
       const title = chat.title || 'Unknown';
-      const userId = update.my_chat_member.from.id;
-      await this.channelModel.updateOne(
-        { channelId },
-        { $set: { title, channelAdminId: userId } }, // Only update 'title'
-        { upsert: true },
-      );
 
       try {
         await ctx.telegram.sendMessage(
@@ -102,7 +118,11 @@ export class BotUpdate {
             },
           },
         );
-        await ctx.answerCbQuery();
+        await this.channelModel.create({
+          title,
+          channelAdminId: userId,
+          channelId,
+        });
       } catch (err) {
         console.error('❌ Error sending welcome message to channel:', err);
       }
@@ -150,7 +170,10 @@ export class BotUpdate {
       // Save: All categories for this channel
       await ctx.editMessageReplyMarkup(undefined);
       await ctx.reply(
-        '✅ همه دسته‌بندی‌ها انتخاب شد. اشعار به‌صورت خودکار ارسال خواهند شد.',
+        '✅ همه دسته‌بندی‌ها انتخاب شد. اشعار به‌صورت تصادفی ارسال خواهند شد.',
+      );
+      await ctx.reply(
+        'رباتت ساخته شد. حالا میتونی هر روز اشعار دلنشین توی کانالت داشته باشی 🥰',
       );
       await this.channelModel.updateOne(
         {

@@ -8,7 +8,7 @@ export class Channel {
   @Prop({ required: true, unique: true })
   channelId: string;
 
-  @Prop({ required: true, unique: true })
+  @Prop({ required: true})
   channelAdminId: string;
 
   @Prop()
