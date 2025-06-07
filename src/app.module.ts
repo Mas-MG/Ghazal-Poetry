@@ -4,6 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { TelegrafModule } from 'nestjs-telegraf';
 import { BotModule } from './bot/bot.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ChannelModule } from './channel/channel.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     }),
     BotModule,
     ScheduleModule.forRoot(),
+    ChannelModule,
   ],
   exports: [TelegrafModule],
 })

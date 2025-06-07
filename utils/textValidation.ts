@@ -28,7 +28,8 @@ export const isValidText = (input: string): boolean => {
 
 // isValidNameOrCategory: allows Persian/Arabic letters and spaces only — no punctuation, no digits
 export const isValidNameOrCategory = (input: string): boolean => {
-  const onlyPersianLettersAndSpaces = /^[\u0600-\u06FF\s\u200C]+$/; // فقط حروف فارسی + فاصله + نیم‌فاصله
-  const hasDigit = /[0-9\u06F0-\u06F9\u0660-\u0669]/.test(input);
-  return onlyPersianLettersAndSpaces.test(input.trim()) && !hasDigit;
+  const hasInvalidChar = /[^\p{L}\s\u200C]/u.test(input); // هر چیزی که حرف یا فاصله یا نیم‌فاصله نیست
+  const hasDigit = /[0-9\u06F0-\u06F9\u0660-\u0669]/.test(input); // اعداد لاتین، فارسی، عربی
+  return !hasInvalidChar && !hasDigit;
 };
+

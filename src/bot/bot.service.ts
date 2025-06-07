@@ -6,36 +6,61 @@ import { Model } from 'mongoose';
 import { ConfigService } from '@nestjs/config';
 import { Telegraf } from 'telegraf';
 import { InjectBot } from 'nestjs-telegraf';
+import { Channel, ChannelDocument } from '../channel/schema/channel.schema';
 
 @Injectable()
 export class PoemSchedulerService {
   constructor(
     private readonly config: ConfigService,
     @InjectModel(Poem.name) private readonly poemModel: Model<Poem>,
+    @InjectModel(Channel.name)
+    private readonly channelModel: Model<ChannelDocument>,
     @InjectBot() private readonly bot: Telegraf,
   ) {}
 
-  private async sendRandomPoem() {
-    const count = await this.poemModel.countDocuments({
-      approved: true,
-      isPublished: false,
-    });
-    if (count === 0) return;
+  private async sendRandomPoemsToChannels() {
+    const now = new Date();
+    const hour = now.getHours();
 
-    const randomIndex = Math.floor(Math.random() * count);
-    const poem = await this.poemModel
-      .findOne({ approved: true, isPublished: false })
-      .skip(randomIndex)
-      .lean();
+    const allChannels = await this.channelModel.find().lean();
 
-    if (!poem) return;
-    await this.poemModel.findByIdAndUpdate(poem._id, { isPublished: true });
+    for (const channel of allChannels) {
+      const [start, end] = channel.timeRange.split('_').map(Number);
 
-    const channelId = this.config.get('TELEGRAM_CHANNEL_ID');
+      const isActive =
+        start < end ? hour >= start && hour < end : hour >= start || hour < end; // handles wrap-around (e.g., 17–24)
 
-    const message = `${poem.text}\n\n- ${poem.poet || 'نامشخص'}`;
+      if (!isActive) continue;
 
-    await this.bot.telegram.sendMessage(channelId, message);
+      const query: any = {
+        approved: true,
+        isPublished: false,
+      };
+
+      if (!channel.allCategories && channel.categories?.length) {
+        query.category = { $in: channel.categories };
+      }
+
+      const count = await this.poemModel.countDocuments(query);
+      if (!count) continue;
+
+      const randomIndex = Math.floor(Math.random() * count);
+      const poem = await this.poemModel.findOne(query).skip(randomIndex).lean();
+      if (!poem) continue;
+
+      await this.poemModel.findByIdAndUpdate(poem._id, { isPublished: true });
+
+      const message = `${poem.text}\n\n- ${poem.poet || 'نامشخص'}`;
+
+      try {
+        await this.bot.telegram.sendMessage(channel.channelId, message);
+      } catch (err) {
+        console.error(
+          `❌ Failed to send to channel ${channel.channelId}:`,
+          err.message,
+        );
+      }
+    }
   }
 
   // @Cron('0 6-12/3 * * *')
@@ -45,6 +70,6 @@ export class PoemSchedulerService {
 
   @Cron('*/10 * * * * *') // every 10 seconds
   async sendEvery10Seconds() {
-    await this.sendRandomPoem();
+    await this.sendRandomPoemsToChannels();
   }
 }

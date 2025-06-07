@@ -8,6 +8,7 @@ import { HydratedDocument, Model } from 'mongoose';
 import { isAdminFn } from 'utils/isAdmin';
 import { normalizePoemText } from 'utils/duplicate';
 import { isValidNameOrCategory, isValidText } from 'utils/textValidation';
+import { Channel, ChannelDocument } from 'src/channel/schema/channel.schema';
 
 const sendPoemState = new Map<
   number,
@@ -33,6 +34,8 @@ export class BotUpdate {
   constructor(
     private readonly config: ConfigService,
     @InjectModel(Poem.name) private readonly poemModel: Model<Poem>,
+    @InjectModel(Channel.name)
+    private readonly channelModel: Model<ChannelDocument>,
   ) {}
 
   @Start()
@@ -40,10 +43,137 @@ export class BotUpdate {
     await ctx.reply(
       'سلام خوش اومدی❤️\nمرسی که غزل رو انتخاب کردی ☺️\nرو یکی از گزینه ها کلیک کن 👇',
       Markup.inlineKeyboard([
-        Markup.button.callback('ارسال شعر', 'SEND_POEM'),
-        Markup.button.callback('راهنما', 'HELP'),
+        [
+          Markup.button.callback('ارسال شعر', 'SEND_POEM'),
+          Markup.button.callback('راهنما', 'HELP'),
+        ],
+        [
+          Markup.button.callback('افزودن به کانال', 'ADD_BOT_TO_CHANNEL'),
+          Markup.button.callback('2افزودن به کانال', 'time_10'),
+        ],
       ]),
     );
+  }
+
+  @Action('ADD_BOT_TO_CHANNEL')
+  async handleAddBotToChannel(@Ctx() ctx: Context) {
+    const botUsername = ctx.botInfo.username;
+    await ctx.answerCbQuery();
+    await ctx.reply(
+      `برای افزودن ربات به کانال خود، روی دکمه زیر بزنید و مطمئن شوید ربات را به عنوان ادمین اضافه می‌کنید:`,
+      Markup.inlineKeyboard([
+        [
+          Markup.button.url(
+            '➕ افزودن ربات به کانال',
+            `https://t.me/${botUsername}?startchannel=start`,
+          ),
+        ],
+      ]),
+    );
+  }
+
+  @On('my_chat_member')
+  async onBotAddedToChannel(@Ctx() ctx: Context) {
+    const update = ctx.update as any;
+    const chat = update.my_chat_member?.chat;
+    const newStatus = update.my_chat_member?.new_chat_member?.status;
+
+    // Only respond to being added to a channel
+    if (chat?.type === 'channel' && newStatus === 'administrator') {
+      const channelId = chat?.id.toString();
+      const title = chat.title || 'Unknown';
+      const userId = update.my_chat_member.from.id;
+      await this.channelModel.updateOne(
+        { channelId },
+        { $set: { title, channelAdminId: userId } }, // Only update 'title'
+        { upsert: true },
+      );
+
+      try {
+        await ctx.telegram.sendMessage(
+          userId,
+          '✅ ربات با موفقیت به کانال اضافه شد.\n\n⌛ لطفاً بازه زمانی ارسال شعر را انتخاب کنید:',
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '🕘 9 صبح تا 6 عصر', callback_data: `time_9_18` }],
+                [{ text: '🕔 5 عصر تا 12 شب', callback_data: `time_17_24` }],
+              ],
+            },
+          },
+        );
+        await ctx.answerCbQuery();
+      } catch (err) {
+        console.error('❌ Error sending welcome message to channel:', err);
+      }
+    }
+  }
+
+  @Action(/time_.+/)
+  async handleTimeSelection(@Ctx() ctx: Context & { match: RegExpMatchArray }) {
+    const timeRange = ctx.match[0].replace('time_', '');
+    const chatId = ctx.chat?.id;
+
+    await this.channelModel.updateOne(
+      {
+        channelAdminId: chatId,
+      },
+      { $set: { timeRange } }, // Only update 'title'
+    );
+
+    // Save to DB: time preference per channelId
+    await ctx.editMessageText(
+      '✅ بازه زمانی ثبت شد.\n\n📂 حالا دسته‌بندی شعرها را انتخاب کن:',
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '💔 عاشقانه', callback_data: 'cat_عاشقانه' }],
+            [{ text: '📜 اجتماعی', callback_data: 'cat_اجتماعی' }],
+            [{ text: '😢 غمگین', callback_data: 'cat_غمگین' }],
+            [{ text: '✨ همه دسته‌بندی‌ها', callback_data: 'cat_همه' }],
+            [{ text: '➕ افزودن بیشتر', callback_data: 'cat_بیشتر' }],
+            [{ text: '✅ کافیه', callback_data: 'cat_تمام' }],
+          ],
+        },
+      },
+    );
+  }
+
+  @Action(/cat_.+/)
+  async handleCategorySelection(
+    @Ctx() ctx: Context & { match: RegExpMatchArray },
+  ) {
+    const chatId = ctx.chat?.id;
+    const category = ctx.match[0].replace('cat_', '');
+
+    if (category === 'همه') {
+      // Save: All categories for this channel
+      await ctx.editMessageReplyMarkup(undefined);
+      await ctx.reply(
+        '✅ همه دسته‌بندی‌ها انتخاب شد. اشعار به‌صورت خودکار ارسال خواهند شد.',
+      );
+      await this.channelModel.updateOne(
+        {
+          channelAdminId: chatId,
+        },
+        { $set: { allCategories: true } }, // Only update 'title'
+      );
+    } else if (category === 'بیشتر') {
+      await ctx.reply('دسته‌ی دیگری رو انتخاب کن یا "کافیه" رو بزن.');
+    } else if (category === 'تمام') {
+      await ctx.editMessageReplyMarkup(undefined);
+      await ctx.reply(
+        'رباتت ساخته شد. حالا میتونی هر روز اشعار دلنشین توی کانالت داشته باشی 🥰',
+      );
+    } else {
+      await ctx.reply(`✅ دسته "${category}" انتخاب شد.`);
+      await this.channelModel.updateOne(
+        {
+          channelAdminId: chatId,
+        },
+        { $addToSet: { categories: category } }, // Only update 'title'
+      );
+    }
   }
 
   @Action('SEND_POEM')
@@ -72,7 +202,9 @@ export class BotUpdate {
 
     sendPoemState.set(userId, { step: 'waiting_poem' });
     await ctx.answerCbQuery();
-    await ctx.reply('هرچه دل تنگت میخواهد بگو...\n\n🩶 شعر فقط باید شامل حروف فارسی، فاصله، نقطه و یک یا دو بیت باشد، مانند:\n\n♦️ دارم امید عاطفتی از جناب دوست،\nکردم جنایتی و امیدم به عفو اوست\n\nیا\n\n♦️ دارم امید عاطفتی از جناب دوست،\nکردم جنایتی و امیدم به عفو اوست،\nدانم که بگذرد ز سر جرم من که او،\nگر چه پریوش است ولیکن فرشته خوست');
+    await ctx.reply(
+      'هرچه دل تنگت میخواهد بگو...\n\n🩶 شعر فقط باید شامل حروف فارسی، فاصله، نقطه و یک یا دو بیت باشد، مانند:\n\n♦️ دارم امید عاطفتی از جناب دوست،\nکردم جنایتی و امیدم به عفو اوست\n\nیا\n\n♦️ دارم امید عاطفتی از جناب دوست،\nکردم جنایتی و امیدم به عفو اوست،\nدانم که بگذرد ز سر جرم من که او،\nگر چه پریوش است ولیکن فرشته خوست',
+    );
   }
 
   @Action('HELP')
@@ -381,9 +513,7 @@ export class BotUpdate {
       return;
     } else if (state.step === 'waiting_category') {
       if (!isValidNameOrCategory(text)) {
-        await ctx.reply(
-          'دسته‌بندی فقط باید شامل حروف فارسی یا عربی و فاصله باشد ❗️',
-        );
+        await ctx.reply('دسته‌بندی فقط باید شامل حروف فارسی و فاصله باشد ❗️');
         return;
       }
       const dataPlaceHolder = sendPoemState.get(userId);
