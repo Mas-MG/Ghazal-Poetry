@@ -9,6 +9,7 @@ import { isAdminFn } from 'utils/isAdmin';
 import { normalizePoemText } from 'utils/duplicate';
 import { isValidNameOrCategory, isValidText } from 'utils/textValidation';
 import { Channel, ChannelDocument } from 'src/channel/schema/channel.schema';
+import { InlineKeyboardButton } from 'telegraf/typings/core/types/typegram';
 
 const sendPoemState = new Map<
   number,
@@ -49,7 +50,7 @@ export class BotUpdate {
         ],
         [
           Markup.button.callback('افزودن به کانال', 'ADD_BOT_TO_CHANNEL'),
-          // Markup.button.callback('2افزودن به کانال', 'time_10'),
+          Markup.button.callback('کانال های من', `MY_CHANNELS`),
         ],
       ]),
     );
@@ -60,7 +61,9 @@ export class BotUpdate {
     const botUsername = ctx.botInfo.username;
     await ctx.answerCbQuery();
     await ctx.reply(
-      `برای افزودن ربات به کانال خود، روی دکمه زیر بزنید و مطمئن شوید ربات را به عنوان ادمین اضافه می‌کنید:`,
+      `برای افزودن ربات به کانال خود، روی دکمه زیر بزنید و مطمئن شوید که ربات را به عنوان ادمین اضافه می‌کنید.  
+(در بخش "Manage Messages" گزینه "Post Messages" را برای ربات فعال کنید.)
+`,
       Markup.inlineKeyboard([
         [
           Markup.button.url(
@@ -70,6 +73,51 @@ export class BotUpdate {
         ],
       ]),
     );
+  }
+
+  @Action('MY_CHANNELS')
+  async myChannelsAction(@Ctx() ctx: Context) {
+    const chatId = ctx.chat?.id;
+    const channels = await this.channelModel
+      .find({ channelAdminId: chatId })
+      .exec();
+    if (channels.length > 0) {
+      const channelBtns: InlineKeyboardButton[] = [];
+      channels.forEach((channel) => {
+        channelBtns.push(
+          Markup.button.callback(
+            channel.title,
+            `CHANNEL_${channel.channelId}title${channel.title}`,
+          ),
+        );
+      });
+
+      await ctx.reply(
+        'یکی از کانال ها رو برای تغییر ساعت ارسال شعر یا تغییر دسته بندی انتخاب کن:',
+        Markup.inlineKeyboard(channelBtns),
+      );
+    } else {
+      await ctx.reply('هنوز ربات رو به کانالی اضافه نکردی 😔');
+    }
+  }
+
+  @Action(/CHANNEL_.+/)
+  async myChannelAction(@Ctx() ctx: Context & { match: RegExpMatchArray }) {
+    const channelInfo = ctx.match[0].replace('CHANNEL_', '').split('title');
+    const channelId = channelInfo[0];
+    const title =channelInfo[1];
+    await ctx.reply('تنظیم ساعت ارسال اشعار و دسته بندی:', {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: 'انجام تنظیمات',
+              callback_data: `BOT_SETTINGS_${channelId}title${title}`,
+            },
+          ],
+        ],
+      },
+    });
   }
 
   @On('my_chat_member')
@@ -105,38 +153,83 @@ export class BotUpdate {
     if (chat?.type === 'channel' && newStatus === 'administrator') {
       const title = chat.title || 'Unknown';
 
-      try {
-        await ctx.telegram.sendMessage(
-          userId,
-          '✅ ربات با موفقیت به کانال اضافه شد.\n\n⌛ لطفاً بازه زمانی ارسال شعر را انتخاب کنید:',
-          {
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: '🕘 9 صبح تا 6 عصر', callback_data: `time_9_18` }],
-                [{ text: '🕔 5 عصر تا 12 شب', callback_data: `time_17_24` }],
+      await ctx.telegram.sendMessage(
+        userId,
+        'تنظیم ساعت ارسال اشعار و دسته بندی:',
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: 'انجام تنظیمات',
+                  callback_data: `BOT_SETTINGS_${channelId}title${title}`,
+                },
               ],
-            },
+            ],
           },
-        );
-        await this.channelModel.create({
-          title,
-          channelAdminId: userId,
-          channelId,
-        });
-      } catch (err) {
-        console.error('❌ Error sending welcome message to channel:', err);
-      }
+        },
+      );
+    }
+  }
+
+  @Action(/BOT_SETTINGS_.+/)
+  async botSettings(@Ctx() ctx: Context & { match: RegExpMatchArray }) {
+    const channelInfo = ctx.match[0].replace('BOT_SETTINGS_', '').split('title');
+    const channelId = channelInfo[0];
+    const title = channelInfo[1];
+    const userId = ctx.chat?.id!;
+
+    try {
+      await ctx.telegram.sendMessage(
+        userId,
+        '✅ ربات با موفقیت به کانال اضافه شد.\n\n⌛ لطفاً بازه زمانی ارسال شعر را انتخاب کنید:',
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: '🕘 9 صبح تا 6 عصر',
+                  callback_data: `time_9_18_${channelId}`,
+                },
+              ],
+              [
+                {
+                  text: '🕔 5 عصر تا 12 شب',
+                  callback_data: `time_17_24_${channelId}`,
+                },
+              ],
+            ],
+          },
+        },
+      );
+      await this.channelModel.updateOne(
+        { channelId },
+        {
+          $set: {
+            title,
+            channelAdminId: userId,
+            channelId,
+          },
+        },
+        { upsert: true },
+      );
+    } catch (err) {
+      console.error('❌ Error sending welcome message to channel:', err);
     }
   }
 
   @Action(/time_.+/)
   async handleTimeSelection(@Ctx() ctx: Context & { match: RegExpMatchArray }) {
-    const timeRange = ctx.match[0].replace('time_', '');
-    const chatId = ctx.chat?.id;
+    const timeRange = ctx.match[0]
+      .replace('time_', '')
+      .split('_')
+      .slice(0, -1)
+      .join('_');
+    const channelId = ctx.match[0].replace('time_', '').split('_').at(-1);
 
     await this.channelModel.updateOne(
       {
-        channelAdminId: chatId,
+        channelId,
       },
       { $set: { timeRange } }, // Only update 'title'
     );
@@ -147,12 +240,22 @@ export class BotUpdate {
       {
         reply_markup: {
           inline_keyboard: [
-            [{ text: '💔 عاشقانه', callback_data: 'cat_عاشقانه' }],
-            [{ text: '📜 اجتماعی', callback_data: 'cat_اجتماعی' }],
-            [{ text: '😢 غمگین', callback_data: 'cat_غمگین' }],
-            [{ text: '✨ همه دسته‌بندی‌ها', callback_data: 'cat_همه' }],
-            [{ text: '➕ افزودن بیشتر', callback_data: 'cat_بیشتر' }],
-            [{ text: '✅ کافیه', callback_data: 'cat_تمام' }],
+            [{ text: '💔 عاشقانه', callback_data: `cat_عاشقانه_${channelId}` }],
+            [{ text: '📜 اجتماعی', callback_data: `cat_اجتماعی_${channelId}` }],
+            [{ text: '😢 غمگین', callback_data: `cat_غمگین_${channelId}` }],
+            [
+              {
+                text: '✨ همه دسته‌بندی‌ها',
+                callback_data: `cat_همه_${channelId}`,
+              },
+            ],
+            [
+              {
+                text: '➕ افزودن بیشتر',
+                callback_data: `cat_بیشتر_${channelId}`,
+              },
+            ],
+            [{ text: '✅ کافیه', callback_data: `cat_تمام_${channelId}` }],
           ],
         },
       },
@@ -163,23 +266,17 @@ export class BotUpdate {
   async handleCategorySelection(
     @Ctx() ctx: Context & { match: RegExpMatchArray },
   ) {
-    const chatId = ctx.chat?.id;
-    const category = ctx.match[0].replace('cat_', '');
+    const category = ctx.match[0].replace('cat_', '').split('_').at(0);
+    const channelId = ctx.match[0].replace('cat_', '').split('_').at(-1);
 
     if (category === 'همه') {
       // Save: All categories for this channel
-      await ctx.editMessageReplyMarkup(undefined);
       await ctx.reply(
         '✅ همه دسته‌بندی‌ها انتخاب شد. اشعار به‌صورت تصادفی ارسال خواهند شد.',
       );
-      await ctx.reply(
-        'رباتت ساخته شد. حالا میتونی هر روز اشعار دلنشین توی کانالت داشته باشی 🥰',
-      );
       await this.channelModel.updateOne(
-        {
-          channelAdminId: chatId,
-        },
-        { $set: { allCategories: true } }, // Only update 'title'
+        { channelId },
+        { $set: { allCategories: true, categories: [] } },
       );
     } else if (category === 'بیشتر') {
       await ctx.reply('دسته‌ی دیگری رو انتخاب کن یا "کافیه" رو بزن.');
@@ -192,9 +289,12 @@ export class BotUpdate {
       await ctx.reply(`✅ دسته "${category}" انتخاب شد.`);
       await this.channelModel.updateOne(
         {
-          channelAdminId: chatId,
+          channelId,
         },
-        { $addToSet: { categories: category } }, // Only update 'title'
+        {
+          $addToSet: { categories: category },
+          $set: { allCategories: false },
+        },
       );
     }
   }
