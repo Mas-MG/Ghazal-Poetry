@@ -41,6 +41,8 @@ export class BotUpdate {
 
   @Start()
   async startCommand(@Ctx() ctx: Context) {
+    const userId = ctx.from?.id;
+    if (userId) sendPoemState.delete(ctx.from?.id);
     await ctx.reply(
       'سلام خوش اومدی❤️\nمرسی که غزل رو انتخاب کردی ☺️\nرو یکی از گزینه ها کلیک کن 👇',
       Markup.inlineKeyboard([
@@ -105,7 +107,7 @@ export class BotUpdate {
   async myChannelAction(@Ctx() ctx: Context & { match: RegExpMatchArray }) {
     const channelInfo = ctx.match[0].replace('CHANNEL_', '').split('title');
     const channelId = channelInfo[0];
-    const title =channelInfo[1];
+    const title = channelInfo[1];
     await ctx.reply('تنظیم ساعت ارسال اشعار و دسته بندی:', {
       reply_markup: {
         inline_keyboard: [
@@ -174,7 +176,9 @@ export class BotUpdate {
 
   @Action(/BOT_SETTINGS_.+/)
   async botSettings(@Ctx() ctx: Context & { match: RegExpMatchArray }) {
-    const channelInfo = ctx.match[0].replace('BOT_SETTINGS_', '').split('title');
+    const channelInfo = ctx.match[0]
+      .replace('BOT_SETTINGS_', '')
+      .split('title');
     const channelId = channelInfo[0];
     const title = channelInfo[1];
     const userId = ctx.chat?.id!;
@@ -604,7 +608,7 @@ export class BotUpdate {
     if (state.step === 'waiting_poem') {
       if (!isValidText(text)) {
         await ctx.reply(
-          '🩶 شعر فقط باید شامل حروف فارسی، فاصله، نقطه و یک یا دو بیت باشد، مانند:\n\n♦️ دارم امید عاطفتی از جناب دوست،\nکردم جنایتی و امیدم به عفو اوست\n\nیا\n\n♦️ دارم امید عاطفتی از جناب دوست،\nکردم جنایتی و امیدم به عفو اوست،\nدانم که بگذرد ز سر جرم من که او،\nگر چه پریوش است ولیکن فرشته خوست',
+          '🩶 شعر فقط باید شامل حروف فارسی، فاصله، نقطه و یک یا دو بیت باشد، مانند:\n\n دارم امید عاطفتی از جناب دوست،\nکردم جنایتی و امیدم به عفو اوست\n\nیا\n\n دارم امید عاطفتی از جناب دوست،\nکردم جنایتی و امیدم به عفو اوست،\nدانم که بگذرد ز سر جرم من که او،\nگر چه پریوش است ولیکن فرشته خوست',
         );
         return;
       }
