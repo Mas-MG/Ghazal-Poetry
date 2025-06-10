@@ -619,7 +619,7 @@ export class BotUpdate {
         (p) => normalizePoemText(p.text) === normalizedText,
       );
 
-      if (isDuplicate) {
+      if (isDuplicate  && chatType==='private') {
         await ctx.reply('این شعر قبلاً ثبت شده است. یکی دیگه بنویس 🩶');
         return;
       }
