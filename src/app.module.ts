@@ -1,3 +1,4 @@
+import { AgentConnectOpts } from './../node_modules/agent-base/dist/index.d';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -5,6 +6,8 @@ import { TelegrafModule } from 'nestjs-telegraf';
 import { BotModule } from './bot/bot.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ChannelModule } from './channel/channel.module';
+import { SocksProxyAgent } from 'socks-proxy-agent';
+
 
 @Module({
   imports: [
@@ -13,33 +16,20 @@ import { ChannelModule } from './channel/channel.module';
 
     // Connect to MongoDB using MONGODB_URI from .env
     MongooseModule.forRootAsync({
-      imports: [ConfigModule],
-      useFactory: async (cs: ConfigService) => ({
-        uri: cs.get<string>('MONGODB_URI'),
+      useFactory: async () => ({
+        uri: process.env.MONGODB_URI,
       }),
-      inject: [ConfigService],
     }),
 
-    TelegrafModule.forRootAsync({
-      imports: [ConfigModule],
-      useFactory: async (cs: ConfigService) => {
-        const token = cs.get<string>('TELEGRAM_BOT_TOKEN');
-        if (!token) {
-          throw new Error(
-            'توکن یافت نشد!'
-          );
-        }
-
-        return {
-          token,
-        };
-      },
-      inject: [ConfigService],
+    TelegrafModule.forRoot({
+      token: process.env.TELEGRAM_BOT_TOKEN!,
     }),
+
     BotModule,
     ScheduleModule.forRoot(),
     ChannelModule,
   ],
   exports: [TelegrafModule],
+
 })
 export class AppModule {}

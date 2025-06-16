@@ -3,13 +3,14 @@ import { Injectable } from '@nestjs/common';
 import { Context, Markup } from 'telegraf';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
-import { Poem } from './schema/bot.schema';
+import { Poem, PoemDocument } from './schema/bot.schema';
 import { HydratedDocument, Model } from 'mongoose';
 import { isAdminFn } from 'utils/isAdmin';
 import { normalizePoemText } from 'utils/duplicate';
 import { isValidNameOrCategory, isValidText } from 'utils/textValidation';
 import { Channel, ChannelDocument } from 'src/channel/schema/channel.schema';
 import { InlineKeyboardButton } from 'telegraf/typings/core/types/typegram';
+import { allCategories } from 'utils/poemCategories';
 
 const sendPoemState = new Map<
   number,
@@ -20,6 +21,33 @@ const sendPoemState = new Map<
     poemId?: string;
   }
 >();
+
+const categories = [
+  [
+    { text: '💘 عاشقانه', callback_data: 'category_عاشقانه' },
+    { text: '💔 غمگین', callback_data: 'category_غمگین' },
+  ],
+  [
+    { text: '😄 طنز', callback_data: 'category_طنز' },
+    { text: '🕊️ عرفانی', callback_data: 'category_عرفانی' },
+  ],
+  [
+    { text: '🧠 فلسفی', callback_data: 'category_فلسفی' },
+    { text: '🇮🇷 حماسی', callback_data: 'category_حماسی' },
+  ],
+  [
+    { text: '📖 مذهبی', callback_data: 'category_مذهبی' },
+    { text: '🌿 طبیعت', callback_data: 'category_طبیعت' },
+  ],
+  [
+    { text: '💭 اجتماعی', callback_data: 'category_اجتماعی' },
+    { text: '🧸 کودکانه', callback_data: 'category_کودکانه' },
+  ],
+  [
+    { text: '🎭 انتقادی', callback_data: 'category_انتقادی' },
+    { text: '🎉 مناسبتی', callback_data: 'category_مناسبتی' },
+  ],
+];
 
 // Limit for sending message to avoid spam
 const userPoemTimestamps = new Map<number, number[]>(); // userId -> [timestamps]
@@ -243,64 +271,10 @@ export class BotUpdate {
       '✅ بازه زمانی ثبت شد.\n\n📂 حالا دسته‌بندی شعرها را انتخاب کن:',
       {
         reply_markup: {
-          inline_keyboard: [
-            [{ text: '💔 عاشقانه', callback_data: `cat_عاشقانه_${channelId}` }],
-            [{ text: '📜 اجتماعی', callback_data: `cat_اجتماعی_${channelId}` }],
-            [{ text: '😢 غمگین', callback_data: `cat_غمگین_${channelId}` }],
-            [
-              {
-                text: '✨ همه دسته‌بندی‌ها',
-                callback_data: `cat_همه_${channelId}`,
-              },
-            ],
-            [
-              {
-                text: '➕ افزودن بیشتر',
-                callback_data: `cat_بیشتر_${channelId}`,
-              },
-            ],
-            [{ text: '✅ کافیه', callback_data: `cat_تمام_${channelId}` }],
-          ],
+          inline_keyboard: allCategories(Number(channelId), 'CHANNEL'),
         },
       },
     );
-  }
-
-  @Action(/cat_.+/)
-  async handleCategorySelection(
-    @Ctx() ctx: Context & { match: RegExpMatchArray },
-  ) {
-    const category = ctx.match[0].replace('cat_', '').split('_').at(0);
-    const channelId = ctx.match[0].replace('cat_', '').split('_').at(-1);
-
-    if (category === 'همه') {
-      // Save: All categories for this channel
-      await ctx.reply(
-        '✅ همه دسته‌بندی‌ها انتخاب شد. اشعار به‌صورت تصادفی ارسال خواهند شد.',
-      );
-      await this.channelModel.updateOne(
-        { channelId },
-        { $set: { allCategories: true, categories: [] } },
-      );
-    } else if (category === 'بیشتر') {
-      await ctx.reply('دسته‌ی دیگری رو انتخاب کن یا "کافیه" رو بزن.');
-    } else if (category === 'تمام') {
-      await ctx.editMessageReplyMarkup(undefined);
-      await ctx.reply(
-        'رباتت ساخته شد. حالا میتونی هر روز اشعار دلنشین توی کانالت داشته باشی 🥰',
-      );
-    } else {
-      await ctx.reply(`✅ دسته "${category}" انتخاب شد.`);
-      await this.channelModel.updateOne(
-        {
-          channelId,
-        },
-        {
-          $addToSet: { categories: category },
-          $set: { allCategories: false },
-        },
-      );
-    }
   }
 
   @Action('SEND_POEM')
@@ -619,7 +593,7 @@ export class BotUpdate {
         (p) => normalizePoemText(p.text) === normalizedText,
       );
 
-      if (isDuplicate  && chatType==='private') {
+      if (isDuplicate && chatType === 'private') {
         await ctx.reply('این شعر قبلاً ثبت شده است. یکی دیگه بنویس 🩶');
         return;
       }
@@ -636,21 +610,13 @@ export class BotUpdate {
         step: 'waiting_category',
         poet: text,
       });
-      await ctx.reply('موضوعش چیه؟');
-      return;
-    } else if (state.step === 'waiting_category') {
-      if (!isValidNameOrCategory(text)) {
-        await ctx.reply('دسته‌بندی فقط باید شامل حروف فارسی و فاصله باشد ❗️');
-        return;
-      }
+
       const dataPlaceHolder = sendPoemState.get(userId);
       if (!dataPlaceHolder?.poem || !dataPlaceHolder?.poet) {
         await ctx.reply('لطفا شعر و شاعر را وارد کنید ❗️');
         return;
       }
       const { poem, poet } = dataPlaceHolder;
-      const groupId = this.config.get('TELEGRAM_GROUP_ID');
-
       const prevPoem = sendPoemState.get(userId)?.poemId;
 
       if (!prevPoem && chatType === 'private') {
@@ -668,11 +634,6 @@ export class BotUpdate {
           userBanMap.set(userId, now + BAN_DURATION);
           userPoemTimestamps.delete(userId); // Clear spam log
           sendPoemState.delete(userId);
-
-          // await ctx.reply(
-          //   `🚫 به دلیل ارسال زیاد، به مدت ${BAN_DURATION / 60000} دقیقه مسدود شدید.`,
-          // );
-          // return;
         }
 
         // Save poem
@@ -681,35 +642,23 @@ export class BotUpdate {
           username,
           firstName: first_name,
           lastName: last_name,
-          category: text,
+          category: null,
           text: poem,
           poet,
           isPublished: false,
           approved: false,
         });
 
-        const poemId = newPoem._id?.toString();
-        await ctx.telegram.sendMessage(
-          groupId,
-          `☘️ شعر جدید:\n\n${newPoem.text}\n\n♦️ شاعر: ${newPoem.poet}\n\n♦️ دسته بندی: ${newPoem.category}`,
-          {
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  { text: '✅ تایید', callback_data: `approve_${poemId}` },
-                  { text: '✏ ویرایش', callback_data: `edit_${poemId}` },
-                  { text: '🗑 حذف', callback_data: `delete_${poemId}` },
-                ],
-              ],
-            },
+        await ctx.reply('موضوع شعر را انتخاب کن 📝', {
+          reply_markup: {
+            inline_keyboard: allCategories(String(newPoem._id), 'PRIVATE'),
           },
-        );
-        await ctx.reply('شعر زیبای شما ارسال شد 💚');
+        });
       } else {
         const existingPoem = await this.poemModel.findByIdAndUpdate(
           prevPoem,
           {
-            category: text,
+            category: null,
             text: poem,
             poet,
           },
@@ -742,8 +691,70 @@ export class BotUpdate {
           existingPoem.userId,
           'شعر شما ویرایش شد ☘️',
         );
+        sendPoemState.delete(userId);
       }
-      sendPoemState.delete(userId);
+    }
+  }
+
+  @Action(/cat_.+/)
+  async handleCategorySelection(
+    @Ctx() ctx: Context & { match: RegExpMatchArray },
+  ) {
+    const [category, channelOrPoemId] = ctx.match[0]
+      .replace('cat_', '')
+      .split('_');
+
+    if (category === 'همه') {
+      // Save: All categories for this channel
+      await ctx.reply(
+        '✅ همه دسته‌بندی‌ها انتخاب شد. اشعار به‌صورت تصادفی ارسال خواهند شد.',
+      );
+      await this.channelModel.updateOne(
+        { channelId: channelOrPoemId },
+        { $set: { allCategories: true, categories: [] } },
+      );
+    } else if (category === 'بیشتر') {
+      await ctx.reply('دسته‌ی دیگری رو انتخاب کن یا "کافیه" رو بزن.');
+    } else if (category === 'تمام') {
+      await ctx.editMessageReplyMarkup(undefined);
+      await ctx.reply(
+        'رباتت ساخته شد. حالا میتونی هر روز اشعار دلنشین توی کانالت داشته باشی 🥰',
+      );
+    } else {
+      await ctx.reply(`✅ دسته "${category}" انتخاب شد.`);
+      const poem = await this.poemModel.findById(channelOrPoemId);
+      if (poem) {
+        const poemId = channelOrPoemId;
+        await this.poemModel.findByIdAndUpdate(poemId, { $set: { category } });
+        const groupId = process.env.TELEGRAM_GROUP_ID!;
+        await ctx.telegram.sendMessage(
+          groupId,
+          `☘️ شعر جدید:\n\n${poem.text}\n\n♦️ شاعر: ${poem.poet}\n\n♦️ دسته بندی: ${category}`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: '✅ تایید', callback_data: `approve_${poemId}` },
+                  { text: '✏ ویرایش', callback_data: `edit_${poemId}` },
+                  { text: '🗑 حذف', callback_data: `delete_${poemId}` },
+                ],
+              ],
+            },
+          },
+        );
+        await ctx.reply('شعر زیبای شما ارسال شد 💚');
+        sendPoemState.delete(poem.userId);
+      } else {
+        await this.channelModel.updateOne(
+          {
+            channelId: channelOrPoemId,
+          },
+          {
+            $addToSet: { categories: category },
+            $set: { allCategories: false },
+          },
+        );
+      }
     }
   }
 }
