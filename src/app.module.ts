@@ -7,6 +7,7 @@ import { BotModule } from './bot/bot.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ChannelModule } from './channel/channel.module';
 import { SocksProxyAgent } from 'socks-proxy-agent';
+import { PoemsModule } from './poems/poems.module';
 
 
 @Module({
@@ -28,6 +29,7 @@ import { SocksProxyAgent } from 'socks-proxy-agent';
     BotModule,
     ScheduleModule.forRoot(),
     ChannelModule,
+    PoemsModule,
   ],
   exports: [TelegrafModule],
 

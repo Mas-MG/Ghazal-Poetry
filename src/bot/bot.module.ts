@@ -6,7 +6,6 @@ import { BotCommandsService } from './command.service';
 import { PoemSchedulerService } from './bot.service';
 import { TelegrafModule } from 'nestjs-telegraf';
 import { Channel, ChannelSchema } from '../channel/schema/channel.schema';
-import { TelegramService } from './telegram.service';
 
 @Module({
   imports: [
