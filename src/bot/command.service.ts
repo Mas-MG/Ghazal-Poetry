@@ -3,22 +3,29 @@ import { ConfigService } from '@nestjs/config';
 import { Telegraf } from 'telegraf';
 import { Context } from 'telegraf';
 
+// Marks this class as injectable so it can be used in NestJS's dependency injection system
 @Injectable()
 export class BotCommandsService implements OnModuleInit {
+  // Telegraf bot instance typed with Telegraf Context
   private bot: Telegraf<Context>;
 
+  // Inject ConfigService to access environment variables
   constructor(private readonly configService: ConfigService) {}
 
+  // This method runs when the module is initialized
   async onModuleInit() {
+    // Get the bot token and group ID from environment variables
     const token = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
     const groupId = this.configService.get<string>('TELEGRAM_GROUP_ID');
 
+    // Ensure token and group ID are provided
     if (!token) throw new Error('توکن یافت نشد!');
     if (!groupId) throw new Error('آیدی گروه یافت نشد!');
 
+    // Initialize the Telegraf bot with the provided token
     this.bot = new Telegraf(token);
 
-    // 1. Clear global commands (default scope)
+    // 1️⃣ Clear existing global commands for the specific chat (group)
     await this.bot.telegram.setMyCommands([], {
       scope: {
         type: 'chat',
@@ -26,7 +33,7 @@ export class BotCommandsService implements OnModuleInit {
       },
     });
 
-    // 👥 For all users (default scope)
+    // 2️⃣ Set default command for all private chat users (e.g., /start)
     await this.bot.telegram.setMyCommands(
       [{ command: 'start', description: 'گزینه‌ها' }],
       {
@@ -36,7 +43,7 @@ export class BotCommandsService implements OnModuleInit {
       },
     );
 
-    // 🔐 For group admins only
+    // 3️⃣ Set admin-only commands for the group (only admins can use these)
     await this.bot.telegram.setMyCommands(
       [
         { command: 'poems', description: 'نمایش اشعار تایید نشده' },
