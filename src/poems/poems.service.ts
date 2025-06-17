@@ -49,14 +49,14 @@ export class PoemsService {
 
     const channels = await features.model;
     if (channels.length <= 0) {
-      throw new NotFoundException('No Poem Found!');
+      throw new NotFoundException('No Channel Found!');
     }
     return channels;
   }
 
   async getChannel(id: string) {
     isValidId('Channel', id);
-    const channel = await this.poemModel.findById(id);
+    const channel = await this.channelModel.findById(id);
     if (!channel) throw new NotFoundException('Channel Not Found!');
     return channel;
   }
