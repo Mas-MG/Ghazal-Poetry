@@ -15,10 +15,11 @@ import { allCategories } from 'utils/poemCategories';
 const sendPoemState = new Map<
   number,
   {
-    step: 'waiting_poem' | 'waiting_poet' | 'waiting_category';
+    step?: 'waiting_poem' | 'waiting_poet';
     poem?: string;
     poet?: string;
     poemId?: string;
+    onEdit?: boolean;
   }
 >();
 
@@ -344,7 +345,7 @@ export class BotUpdate {
   }
 
   @Action(/edit_(.+)/)
-  async editPoem(@Ctx() ctx: Context & { match: RegExpMatchArray }) {
+  async chooseEditOption(@Ctx() ctx: Context & { match: RegExpMatchArray }) {
     const poemId = ctx.match[1];
     const chatId = this.config.get('TELEGRAM_GROUP_ID');
     const userId = ctx.from?.id;
@@ -359,18 +360,56 @@ export class BotUpdate {
       });
       return;
     }
-    await ctx.answerCbQuery();
-    await ctx.reply('✏️ لطفا متن جدید را ارسال کنید.');
-    const poem = await this.poemModel.findById(poemId);
-    if (!poem) {
-      await ctx.answerCbQuery('شعر بافت نشد ❌', { show_alert: true });
-      return;
-    }
-    sendPoemState.set(userId, {
-      step: 'waiting_poem',
-      poemId: poem?._id?.toString(),
+    await ctx.reply('✏️ کدوم مورد رو میخوای ویرایش کنی؟', {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: '📜 شعر', callback_data: `poem_${poemId}` },
+            { text: '🙍🏼‍♂️ شاعر', callback_data: `poet_${poemId}` },
+            { text: '📂 دسته بندی', callback_data: `category_${poemId}` },
+          ],
+        ],
+      },
     });
-    await ctx.editMessageReplyMarkup(undefined);
+    await ctx.answerCbQuery();
+  }
+
+  @Action(/(poem|poet|category)_(.+)/)
+  async handleEditSubOption(@Ctx() ctx: Context & { match: RegExpMatchArray }) {
+    const type = ctx.match[1]; // 'poem', 'poet', or 'cat'
+    const poemId = ctx.match[2];
+    const userId = ctx.from?.id!;
+
+    switch (type) {
+      case 'poem':
+        sendPoemState.set(userId, {
+          step: 'waiting_poem',
+          poemId,
+          onEdit: true,
+        });
+        await ctx.reply('شعر ویرایش شده رو بنویس: 📜');
+        break;
+      case 'poet':
+        sendPoemState.set(userId, {
+          step: 'waiting_poet',
+          poemId,
+          onEdit: true,
+        });
+        await ctx.reply('نام شاعر:');
+        break;
+      case 'category':
+        sendPoemState.set(userId, {
+          onEdit: true,
+        });
+        await ctx.editMessageText('دسته بندی جدید رو انتخاب کن 📂:', {
+          reply_markup: {
+            inline_keyboard: allCategories(poemId, 'PRIVATE'),
+          },
+        });
+        break;
+    }
+
+    await ctx.answerCbQuery();
   }
 
   @Action(/delete_(.+)/)
@@ -598,8 +637,10 @@ export class BotUpdate {
         return;
       }
       sendPoemState.set(userId, { ...state, step: 'waiting_poet', poem: text });
-      await ctx.reply('شاعرش کیه؟');
-      return;
+      if (!state.onEdit) {
+        await ctx.reply('شاعرش کیه؟');
+        return;
+      }
     } else if (state.step === 'waiting_poet') {
       if (!isValidNameOrCategory(text)) {
         await ctx.reply('نام شاعر فقط باید شامل حروف فارسی و فاصله باشد ❗️');
@@ -607,92 +648,89 @@ export class BotUpdate {
       }
       sendPoemState.set(userId, {
         ...state,
-        step: 'waiting_category',
         poet: text,
       });
+    }
+    const dataPlaceHolder = sendPoemState.get(userId);
 
-      const dataPlaceHolder = sendPoemState.get(userId);
-      if (!dataPlaceHolder?.poem || !dataPlaceHolder?.poet) {
-        await ctx.reply('لطفا شعر و شاعر را وارد کنید ❗️');
-        return;
-      }
-      const { poem, poet } = dataPlaceHolder;
-      const prevPoem = sendPoemState.get(userId)?.poemId;
+    const poet = dataPlaceHolder?.poet;
+    const poem = dataPlaceHolder?.poem;
 
-      if (!prevPoem && chatType === 'private') {
-        const now = Date.now();
+    const prevPoem = sendPoemState.get(userId)?.poemId;
 
-        // 2. Track timestamps
-        const timestamps = userPoemTimestamps.get(userId) || [];
-        const filtered = timestamps.filter((ts) => now - ts < TIME_WINDOW);
+    if (!prevPoem && chatType === 'private') {
+      const now = Date.now();
 
-        filtered.push(now);
-        userPoemTimestamps.set(userId, filtered);
+      // 2. Track timestamps
+      const timestamps = userPoemTimestamps.get(userId) || [];
+      const filtered = timestamps.filter((ts) => now - ts < TIME_WINDOW);
 
-        // 3. Ban if exceeded
-        if (filtered.length >= MAX_POEMS) {
-          userBanMap.set(userId, now + BAN_DURATION);
-          userPoemTimestamps.delete(userId); // Clear spam log
-          sendPoemState.delete(userId);
-        }
+      filtered.push(now);
+      userPoemTimestamps.set(userId, filtered);
 
-        // Save poem
-        const newPoem: HydratedDocument<Poem> = await this.poemModel.create({
-          userId,
-          username,
-          firstName: first_name,
-          lastName: last_name,
-          category: null,
-          text: poem,
-          poet,
-          isPublished: false,
-          approved: false,
-        });
-
-        await ctx.reply('موضوع شعر را انتخاب کن 📝', {
-          reply_markup: {
-            inline_keyboard: allCategories(String(newPoem._id), 'PRIVATE'),
-          },
-        });
-      } else {
-        const existingPoem = await this.poemModel.findByIdAndUpdate(
-          prevPoem,
-          {
-            category: null,
-            text: poem,
-            poet,
-          },
-          { new: true },
-        );
-        if (!existingPoem || !prevPoem) {
-          await ctx.reply('شعر بافت نشد ❌');
-          sendPoemState.delete(userId);
-          return;
-        }
-
-        const poemId = existingPoem._id?.toString();
-
-        await ctx.reply('شعر ویرایش شد ✅');
-        await ctx.reply(
-          `☘️ شعر جدید:\n\n${existingPoem.text}\n\n♦️ شاعر: ${existingPoem.poet}\n\n♦️ دسته بندی: ${existingPoem.category}`,
-          {
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  { text: '✅ تایید', callback_data: `approve_${poemId}` },
-                  { text: '✏ ویرایش', callback_data: `edit_${poemId}` },
-                  { text: '🗑 حذف', callback_data: `delete_${poemId}` },
-                ],
-              ],
-            },
-          },
-        );
-        await ctx.telegram.sendMessage(
-          existingPoem.userId,
-          'شعر شما ویرایش شد ☘️',
-        );
+      // 3. Ban if exceeded
+      if (filtered.length >= MAX_POEMS) {
+        userBanMap.set(userId, now + BAN_DURATION);
+        userPoemTimestamps.delete(userId); // Clear spam log
         sendPoemState.delete(userId);
       }
+
+      // Save poem
+      const newPoem: HydratedDocument<Poem> = await this.poemModel.create({
+        userId,
+        username,
+        firstName: first_name,
+        lastName: last_name,
+        category: null,
+        text: poem,
+        poet,
+        isPublished: false,
+        approved: false,
+      });
+
+      await ctx.reply('موضوع شعر را انتخاب کن 📝', {
+        reply_markup: {
+          inline_keyboard: allCategories(String(newPoem._id), 'PRIVATE'),
+        },
+      });
+    } else {
+      const updateData: any = {};
+      if (poem) {
+        updateData.text = poem;
+      }
+      if (poet) {
+        updateData.poet = poet;
+      }
+      const existingPoem = await this.poemModel.findByIdAndUpdate(
+        prevPoem,
+        updateData,
+        { new: true },
+      );
+      if (!existingPoem) {
+        await ctx.reply('شعر بافت نشد ❌');
+        sendPoemState.delete(userId);
+        return;
+      }
+
+      const poemId = existingPoem._id?.toString();
+
+      await ctx.reply('شعر ویرایش شد ✅');
+      await ctx.reply(
+        `☘️ شعر جدید:\n\n${existingPoem.text}\n\n♦️ شاعر: ${existingPoem.poet}\n\n♦️ دسته بندی: ${existingPoem.category}`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: '✅ تایید', callback_data: `approve_${poemId}` },
+                { text: '✏ ویرایش', callback_data: `edit_${poemId}` },
+                { text: '🗑 حذف', callback_data: `delete_${poemId}` },
+              ],
+            ],
+          },
+        },
+      );
+
+      sendPoemState.delete(userId);
     }
   }
 
@@ -742,8 +780,13 @@ export class BotUpdate {
             },
           },
         );
-        await ctx.reply('شعر زیبای شما ارسال شد 💚');
-        sendPoemState.delete(poem.userId);
+        const adminId = ctx.from?.id!;
+        const state = sendPoemState.get(adminId);
+        if (!state?.onEdit) {
+          await ctx.reply('شعر زیبای شما ارسال شد 💚');
+          sendPoemState.delete(poem.userId);
+        }
+        sendPoemState.delete(adminId);
       } else {
         await this.channelModel.updateOne(
           {
