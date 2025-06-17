@@ -4,7 +4,7 @@ import { Context, Markup } from 'telegraf';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Poem, PoemDocument } from './schema/bot.schema';
-import { HydratedDocument, Model } from 'mongoose';
+import mongoose, { HydratedDocument, Model } from 'mongoose';
 import { isAdminFn } from 'utils/isAdmin';
 import { normalizePoemText } from 'utils/duplicate';
 import { isValidNameOrCategory, isValidText } from 'utils/textValidation';
@@ -186,7 +186,7 @@ export class BotUpdate {
 
       await ctx.telegram.sendMessage(
         userId,
-        'تنظیم ساعت ارسال اشعار و دسته بندی:',
+        '✅ ربات با موفقیت به کانال اضافه شد.\n\nتنظیم ساعت ارسال اشعار و دسته بندی:',
         {
           reply_markup: {
             inline_keyboard: [
@@ -215,7 +215,7 @@ export class BotUpdate {
     try {
       await ctx.telegram.sendMessage(
         userId,
-        '✅ ربات با موفقیت به کانال اضافه شد.\n\n⌛ لطفاً بازه زمانی ارسال شعر را انتخاب کنید:',
+        '\n\n⌛ لطفاً بازه زمانی ارسال شعر را انتخاب کنید:',
         {
           reply_markup: {
             inline_keyboard: [
@@ -755,12 +755,13 @@ export class BotUpdate {
       await ctx.reply('دسته‌ی دیگری رو انتخاب کن یا "کافیه" رو بزن.');
     } else if (category === 'تمام') {
       await ctx.editMessageReplyMarkup(undefined);
-      await ctx.reply(
-        'رباتت ساخته شد. حالا میتونی هر روز اشعار دلنشین توی کانالت داشته باشی 🥰',
-      );
+      await ctx.reply('رباتت ساخته یا به روز رسانی شد. ✅');
     } else {
       await ctx.reply(`✅ دسته "${category}" انتخاب شد.`);
-      const poem = await this.poemModel.findById(channelOrPoemId);
+      let poem;
+      if (mongoose.Types.ObjectId.isValid(channelOrPoemId)) {
+        poem = await this.poemModel.findById(channelOrPoemId);
+      }
       if (poem) {
         const poemId = channelOrPoemId;
         await this.poemModel.findByIdAndUpdate(poemId, { $set: { category } });
